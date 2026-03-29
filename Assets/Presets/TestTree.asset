@@ -1,0 +1,42 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a54c197d93b951a448ccf109340949ec, type: 3}
+  m_Name: TestTree
+  m_EditorClassIdentifier: Assembly-CSharp::ProceduralTree.Data.TreePreset
+  seed: 85101
+  axiom: F
+  rules:
+  - symbol: 70
+    replacement: 'FF[+F][-F][&FF]'
+    probability: 0.5
+  - symbol: 70
+    replacement: 'F[+FF][-F]'
+    probability: 0.5
+  iterations: 5
+  initialLength: 1.5
+  initialRadius: 0.3
+  lengthReduction: 0.78
+  radiusReduction: 0.58
+  minRadius: 0.005
+  branchAngle: 20
+  angleVariation: 8
+  lengthVariation: 0.1
+  gravity: 0.15
+  phototropism: 0.02
+  generateLeaves: 1
+  leafMinDepth: 2
+  leafSize: 0.08
+  leafDensity: 6
+  leafColor: {r: 0.3, g: 0.65, b: 0.2, a: 1}
+  trunkRadialSegments: 8
+  minRadialSegments: 4
+  heightSegments: 3
