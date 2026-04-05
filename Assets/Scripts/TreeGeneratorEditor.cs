@@ -2,6 +2,9 @@ using UnityEngine;
 
 #if UNITY_EDITOR
 using UnityEditor;
+using System.IO;
+using System.Text;
+using System.Globalization; // <-- PRIDANE PRE SPRAVNE FORMATOVANIE CISEL
 
 [CustomEditor(typeof(TreeGenerator))]
 public class TreeGeneratorEditor : Editor
@@ -40,11 +43,31 @@ public class TreeGeneratorEditor : Editor
         }
         EditorGUILayout.EndHorizontal();
 
+        EditorGUILayout.Space(5);
+
+        // --- TLACIDLO NA EXPORT DO BLENDERU ---
+        GUI.backgroundColor = new Color(0.2f, 0.6f, 0.9f);
+        if (GUILayout.Button("💾 Exportuj do .OBJ (Pre Blender)", GUILayout.Height(25)))
+        {
+            ExportTreeToObj(generator);
+        }
+        GUI.backgroundColor = Color.white;
+        // ---------------------------------------------
+
         EditorGUILayout.Space(10);
 
         DrawDefaultInspector();
 
         // Varovania
+        if (generator.UseStrands)
+        {
+            EditorGUILayout.Space(5);
+            EditorGUILayout.HelpBox(
+                "Strand mod: AutoRegenerate je vypnute. Pouzi tlacidlo 'Generuj Strom' po zmene parametrov.",
+                MessageType.Info
+            );
+        }
+
         if (generator.LastWasTruncated)
         {
             EditorGUILayout.Space(5);
@@ -75,7 +98,6 @@ public class TreeGeneratorEditor : Editor
             {
                 Mesh mesh = mf.sharedMesh;
 
-                // Cas generovania s farebnym indikatorom
                 string timeStr = $"{generator.LastGenerationTimeMs:F1} ms";
                 if (generator.LastGenerationTimeMs > 500f)
                     timeStr += " ⚠️ pomale";
@@ -85,6 +107,11 @@ public class TreeGeneratorEditor : Editor
                 EditorGUILayout.LabelField("Trojuholniky", (mesh.triangles.Length / 3).ToString("N0"));
                 EditorGUILayout.LabelField("Uzly grafu", generator.LastNodeCount.ToString("N0"));
                 EditorGUILayout.LabelField("L-system dlzka", generator.LastLSystemLength.ToString("N0") + " znakov");
+
+                if (generator.UseStrands)
+                {
+                    EditorGUILayout.LabelField("Pocet strandov", generator.LastStrandCount.ToString("N0"));
+                }
 
                 if (generator.RootNode != null)
                 {
@@ -119,6 +146,55 @@ public class TreeGeneratorEditor : Editor
         foreach (var child in node.Children)
             max = Mathf.Max(max, GetMaxDepth(child));
         return max;
+    }
+
+    // --- LOGIKA PRE EXPORT DO OBJ S OPRAVENOU KULTUROU (BODKY NAMIESTO CIAROK) ---
+    private void ExportTreeToObj(TreeGenerator generator)
+    {
+        MeshFilter mf = generator.GetComponent<MeshFilter>();
+        if (mf == null || mf.sharedMesh == null)
+        {
+            EditorUtility.DisplayDialog("Chyba", "Najprv vygeneruj strom, az potom ho mozes exportovat!", "OK");
+            return;
+        }
+
+        string path = EditorUtility.SaveFilePanel("Exportuj Strom ako OBJ", "", "ProceduralTree.obj", "obj");
+        if (string.IsNullOrEmpty(path)) return;
+
+        Mesh mesh = mf.sharedMesh;
+        StringBuilder sb = new StringBuilder();
+        
+        sb.AppendLine("# Generovane pomocou Procedural Tree Generator");
+        sb.AppendLine("o ProceduralTree");
+
+        // OPRAVA: Povieme C#, aby vzdy pouzival americky format cisel (s bodkami)
+        CultureInfo ci = CultureInfo.InvariantCulture;
+
+        // 1. Zapiseme vrcholy (Prevod z Lavo-tociveho do Pravo-tociveho systemu)
+        foreach (Vector3 v in mesh.vertices)
+            sb.AppendLine(string.Format(ci, "v {0:F6} {1:F6} {2:F6}", -v.x, v.y, v.z));
+
+        // 2. Zapiseme UV mapu
+        foreach (Vector2 uv in mesh.uv)
+            sb.AppendLine(string.Format(ci, "vt {0:F6} {1:F6}", uv.x, uv.y));
+
+        // 3. Zapiseme normaly
+        foreach (Vector3 n in mesh.normals)
+            sb.AppendLine(string.Format(ci, "vn {0:F6} {1:F6} {2:F6}", -n.x, n.y, n.z));
+
+        // 4. Zapiseme trojuholniky (plochy) - tie su bez desatinnych miest, takze su bezpecne
+        for (int i = 0; i < mesh.triangles.Length; i += 3)
+        {
+            int t1 = mesh.triangles[i] + 1;
+            int t2 = mesh.triangles[i + 1] + 1;
+            int t3 = mesh.triangles[i + 2] + 1;
+            
+            sb.AppendLine($"f {t3}/{t3}/{t3} {t2}/{t2}/{t2} {t1}/{t1}/{t1}");
+        }
+
+        File.WriteAllText(path, sb.ToString());
+        Debug.Log($"[Export Uspesny] Strom bol ulozeny do: {path}");
+        EditorUtility.DisplayDialog("Uspesny Export", "Strom bol uspesne exportovany do OBJ formatu!\nTeraz ho mozes otvorit v Blenderi alebo 3D Vieweri.", "Super");
     }
 }
 #endif

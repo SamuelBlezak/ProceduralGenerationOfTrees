@@ -5,12 +5,6 @@ using Debug = UnityEngine.Debug;
 
 /// <summary>
 /// Hlavny komponent pre proceduralne generovanie stromov.
-/// 
-/// Zmeny oproti v1:
-///   - Opraveny memory leak (stare meshe sa uvolnuju)
-///   - Pridana gravitropia
-///   - Meranie casu generovania
-///   - Bezpecnostny limit pre L-system
 /// </summary>
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
 [ExecuteAlways]
@@ -72,6 +66,35 @@ public class TreeGenerator : MonoBehaviour
     [Tooltip("Laplacianove vyhladzovanie normalov")]
     public bool SmoothNormals = true;
 
+    [Header("=== Strand Modelovanie ===")]
+    [Tooltip("Povolit strand-based volumetricke modelovanie (Faza 2)")]
+    public bool UseStrands = false;
+
+    [Tooltip("Pocet strandov na jeden koncovy uzol (1-5)")]
+    [Range(1, 5)]
+    public int StrandsPerEndNode = 1;
+
+    [Tooltip("Polomer jedneho strandu")]
+    [Range(0.002f, 0.05f)]
+    public float StrandRadius = 0.008f;
+
+    [Tooltip("Pocet PBD iteracii pre packing strandov")]
+    [Range(1, 10)]
+    public int PBDIterations = 3;
+
+    [Tooltip("Pocet interpolacnych krokov medzi uzlami")]
+    [Range(1, 6)]
+    public int StrandInterpolationSteps = 2;
+
+    [Tooltip("Maximalny celkovy pocet strandov (ochrana pred pomalostou)")]
+    [Range(20, 1000)]
+    public int MaxTotalStrands = 150;
+
+    [Header("=== Interaktívne Operátory (Článok) ===")]
+    [Tooltip("Sila skrútenia (Twist) na jednu úroveň vetvenia (v stupňoch). Simuluje špirálovitý rast.")]
+    [Range(-30f, 30f)]
+    public float TwistPerLevel = 0f;
+
     [Header("=== Vizualizacia ===")]
     [Tooltip("Zobrazit skeletalny graf (Debug)")]
     public bool ShowSkeleton = false;
@@ -85,6 +108,7 @@ public class TreeGenerator : MonoBehaviour
     // Interne premenne
     private BranchNode _rootNode;
     private List<BranchSegment> _segments;
+    private StrandSystem _strandSystem;
     private MeshFilter _meshFilter;
     private MeshRenderer _meshRenderer;
     private int _lastHash;
@@ -93,6 +117,7 @@ public class TreeGenerator : MonoBehaviour
     [HideInInspector] public float LastGenerationTimeMs;
     [HideInInspector] public int LastNodeCount;
     [HideInInspector] public int LastLSystemLength;
+    [HideInInspector] public int LastStrandCount;
     [HideInInspector] public bool LastWasTruncated;
 
     public BranchNode RootNode => _rootNode;
@@ -105,18 +130,20 @@ public class TreeGenerator : MonoBehaviour
         if (_meshRenderer.sharedMaterial == null)
             _meshRenderer.sharedMaterial = CreateDefaultMaterial();
 
+        bool wasUsingStrands = UseStrands;
+        UseStrands = false;
         GenerateTree();
+        UseStrands = wasUsingStrands;
     }
 
     void OnDisable()
     {
-        // Uvolni mesh pri deaktivacii
         CleanupMesh();
     }
 
     void Update()
     {
-        if (AutoRegenerate)
+        if (AutoRegenerate && !UseStrands)
         {
             int hash = ComputeParameterHash();
             if (hash != _lastHash)
@@ -127,14 +154,10 @@ public class TreeGenerator : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Hlavna metoda — vygeneruj cely strom.
-    /// </summary>
     public void GenerateTree()
     {
         Stopwatch sw = Stopwatch.StartNew();
 
-        // Uvolni stary mesh
         CleanupMesh();
 
         // 1. L-system
@@ -161,10 +184,40 @@ public class TreeGenerator : MonoBehaviour
         (_rootNode, _segments) = turtle.Interpret(lSystemString);
         LastNodeCount = CountNodes(_rootNode);
 
-        // 3. Mesh
-        Mesh mesh = BranchMeshGenerator.GenerateTreeMesh(
-            _rootNode, RadialSegments, MaxMeshDepth, SmoothNormals
-        );
+        // 3. Strand system
+        LastStrandCount = 0;
+        Mesh mesh;
+
+        if (UseStrands)
+        {
+            _strandSystem = new StrandSystem
+            {
+                StrandRadius = StrandRadius,
+                StrandsPerEndNode = StrandsPerEndNode,
+                PBDIterations = PBDIterations,
+                PBDSteps = 20,
+                MaxTotalStrands = MaxTotalStrands,
+                MedialAxisAttraction = 0.1f,
+                Seed = Seed
+            };
+
+            _strandSystem.Build(_rootNode);
+
+            // Aplikácia Twist operátora, ak je nastavený
+            if (Mathf.Abs(TwistPerLevel) > 0.01f)
+            {
+                ApplyRecursiveTwist(_rootNode, 0f);
+            }
+
+            LastStrandCount = _strandSystem.Strands.Count;
+            mesh = StrandMeshGenerator.GenerateStrandMesh(_rootNode, _strandSystem, StrandInterpolationSteps, RadialSegments);
+        }
+        else
+        {
+            _strandSystem = null;
+            mesh = BranchMeshGenerator.GenerateTreeMesh(_rootNode, RadialSegments, MaxMeshDepth, SmoothNormals);
+        }
+
         _meshFilter.sharedMesh = mesh;
 
         sw.Stop();
@@ -172,9 +225,15 @@ public class TreeGenerator : MonoBehaviour
         _lastHash = ComputeParameterHash();
     }
 
-    /// <summary>
-    /// Uvolni stary mesh aby nedochadzalo k memory leakom.
-    /// </summary>
+    private void ApplyRecursiveTwist(BranchNode node, float currentTwist)
+    {
+        _strandSystem.ApplyTwist(node, currentTwist);
+        foreach (var child in node.Children)
+        {
+            ApplyRecursiveTwist(child, currentTwist + TwistPerLevel);
+        }
+    }
+
     private void CleanupMesh()
     {
         if (_meshFilter == null) return;
@@ -215,7 +274,6 @@ public class TreeGenerator : MonoBehaviour
                         }
                     }
                 };
-
             case TreeSpecies.Conifer:
                 return new Dictionary<char, List<LSystemRule>>
                 {
@@ -227,7 +285,6 @@ public class TreeGenerator : MonoBehaviour
                         }
                     }
                 };
-
             case TreeSpecies.Willow:
                 return new Dictionary<char, List<LSystemRule>>
                 {
@@ -239,7 +296,6 @@ public class TreeGenerator : MonoBehaviour
                         }
                     }
                 };
-
             case TreeSpecies.Bush:
                 return new Dictionary<char, List<LSystemRule>>
                 {
@@ -251,7 +307,6 @@ public class TreeGenerator : MonoBehaviour
                         }
                     }
                 };
-
             case TreeSpecies.Palm:
                 return new Dictionary<char, List<LSystemRule>>
                 {
@@ -263,7 +318,6 @@ public class TreeGenerator : MonoBehaviour
                         }
                     }
                 };
-
             default:
                 return new Dictionary<char, List<LSystemRule>>
                 {
@@ -289,6 +343,21 @@ public class TreeGenerator : MonoBehaviour
     {
         if (!ShowSkeleton || _rootNode == null) return;
         DrawNodeGizmos(_rootNode);
+
+        if (_strandSystem != null && UseStrands)
+        {
+            Gizmos.color = new Color(0.2f, 0.6f, 1f, 0.5f);
+            foreach (var strand in _strandSystem.Strands)
+            {
+                for (int i = 0; i < strand.WorldPositions.Count - 1; i++)
+                {
+                    Gizmos.DrawLine(
+                        strand.WorldPositions[i] + transform.position,
+                        strand.WorldPositions[i + 1] + transform.position
+                    );
+                }
+            }
+        }
     }
 
     private void DrawNodeGizmos(BranchNode node)
@@ -333,18 +402,25 @@ public class TreeGenerator : MonoBehaviour
         hash = hash * 31 + AngleVariation.GetHashCode();
         hash = hash * 31 + DivergenceAngle.GetHashCode();
         hash = hash * 31 + Gravitropism.GetHashCode();
+        hash = hash * 31 + TwistPerLevel.GetHashCode();
         hash = hash * 31 + RadialSegments;
         hash = hash * 31 + MaxMeshDepth;
         hash = hash * 31 + (SmoothNormals ? 1 : 0);
+        hash = hash * 31 + (UseStrands ? 1 : 0);
+        hash = hash * 31 + StrandsPerEndNode;
+        hash = hash * 31 + StrandRadius.GetHashCode();
+        hash = hash * 31 + PBDIterations;
+        hash = hash * 31 + StrandInterpolationSteps;
+        hash = hash * 31 + MaxTotalStrands;
         return hash;
     }
 }
 
 public enum TreeSpecies
 {
-    Deciduous,  // Listnatý (dub, javor)
-    Conifer,    // Ihličnan (smrek, borovica)
-    Willow,     // Vŕba
-    Bush,       // Ker
-    Palm        // Palma
+    Deciduous,
+    Conifer,
+    Willow,
+    Bush,
+    Palm
 }
