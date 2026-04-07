@@ -3,121 +3,58 @@ using System.Diagnostics;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
-/// <summary>
-/// Hlavny komponent pre proceduralne generovanie stromov.
-/// </summary>
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
 [ExecuteAlways]
 public class TreeGenerator : MonoBehaviour
 {
+    [Header("=== Preset Druhu ===")]
+    public TreeSpeciesPreset SpeciesPreset;
+
     [Header("=== L-System Nastavenia ===")]
-    [Tooltip("Pocet iteracii L-systemu (3-6). Viac = zlozitejsi strom.")]
-    [Range(1, 7)]
-    public int Iterations = 4;
-
-    [Tooltip("Seed pre nahodne generovanie.")]
+    [Range(1, 7)] public int Iterations = 4;
     public int Seed = 42;
-
-    [Tooltip("Prednastaveny druh stromu")]
-    public TreeSpecies Species = TreeSpecies.Deciduous;
+    [HideInInspector] public TreeSpecies Species = TreeSpecies.Deciduous;
 
     [Header("=== Geometria Vetiev ===")]
-    [Tooltip("Uhol vetvenia v stupnoch")]
-    [Range(10f, 60f)]
-    public float BranchAngle = 25f;
+    [Range(10f, 60f)] public float BranchAngle = 25f;
+    [Range(0.1f, 3f)] public float SegmentLength = 1.0f;
+    [Range(0.05f, 2f)] public float TrunkRadius = 0.3f;
+    [Range(0.5f, 0.95f)] public float RadiusDecay = 0.75f;
+    [Range(0.5f, 0.95f)] public float LengthDecay = 0.85f;
+    [Range(0f, 20f)] public float AngleVariation = 5f;
+    [Range(30f, 180f)] public float DivergenceAngle = 137.5f;
+    [Range(0f, 0.5f)] public float Gravitropism = 0.08f;
+    [Range(0f, 0.5f)] public float Phototropism = 0.05f;
 
-    [Tooltip("Dlzka jedneho segmentu vetvy")]
-    [Range(0.1f, 3f)]
-    public float SegmentLength = 1.0f;
-
-    [Tooltip("Polomer kmena")]
-    [Range(0.05f, 2f)]
-    public float TrunkRadius = 0.3f;
-
-    [Tooltip("Faktor zmensenia polomeru pri vetveni")]
-    [Range(0.5f, 0.95f)]
-    public float RadiusDecay = 0.75f;
-
-    [Tooltip("Faktor zmensenia dlzky pri vetveni")]
-    [Range(0.5f, 0.95f)]
-    public float LengthDecay = 0.85f;
-
-    [Tooltip("Nahodna variacia uhla pre prirodzenejsi vzhled")]
-    [Range(0f, 20f)]
-    public float AngleVariation = 5f;
-
-    [Tooltip("Divergentny uhol — rozlozenie vetiev okolo kmena (137.5 = zlaty uhol)")]
-    [Range(30f, 180f)]
-    public float DivergenceAngle = 137.5f;
-
-    [Tooltip("Gravitropia — ohyb vetiev smerom nadol (0=ziadna, 0.08=mierna, 0.3=silna)")]
-    [Range(0f, 0.5f)]
-    public float Gravitropism = 0.08f;
+    [Header("=== Lístie (Foliage) ===")]
+    public bool EnableLeaves = true;
+    [Range(0.5f, 3f)] public float LeafSize = 1.2f;
+    [Range(2, 6)] public int LeavesPerNode = 3;
+    public Color LeafColor = new Color(0.2f, 0.6f, 0.1f);
 
     [Header("=== Mesh Nastavenia ===")]
-    [Tooltip("Pocet bodov po obvode prierezu (kvalita mesh)")]
-    [Range(4, 16)]
-    public int RadialSegments = 8;
-
-    [Tooltip("Maximalna hlbka vetvenia pre mesh (-1 = vsetky)")]
-    [Range(-1, 10)]
-    public int MaxMeshDepth = -1;
-
-    [Tooltip("Laplacianove vyhladzovanie normalov")]
+    [Range(4, 16)] public int RadialSegments = 8;
+    [Range(-1, 10)] public int MaxMeshDepth = -1;
     public bool SmoothNormals = true;
 
-    [Header("=== Strand Modelovanie ===")]
-    [Tooltip("Povolit strand-based volumetricke modelovanie (Faza 2)")]
-    public bool UseStrands = false;
-
-    [Tooltip("Pocet strandov na jeden koncovy uzol (1-5)")]
-    [Range(1, 5)]
-    public int StrandsPerEndNode = 1;
-
-    [Tooltip("Polomer jedneho strandu")]
-    [Range(0.002f, 0.05f)]
-    public float StrandRadius = 0.008f;
-
-    [Tooltip("Pocet PBD iteracii pre packing strandov")]
-    [Range(1, 10)]
-    public int PBDIterations = 3;
-
-    [Tooltip("Pocet interpolacnych krokov medzi uzlami")]
-    [Range(1, 6)]
-    public int StrandInterpolationSteps = 2;
-
-    [Tooltip("Maximalny celkovy pocet strandov (ochrana pred pomalostou)")]
-    [Range(20, 1000)]
-    public int MaxTotalStrands = 150;
-
-    [Header("=== Interaktívne Operátory (Článok) ===")]
-    [Tooltip("Sila skrútenia (Twist) na jednu úroveň vetvenia (v stupňoch). Simuluje špirálovitý rast.")]
-    [Range(-30f, 30f)]
-    public float TwistPerLevel = 0f;
-
     [Header("=== Vizualizacia ===")]
-    [Tooltip("Zobrazit skeletalny graf (Debug)")]
     public bool ShowSkeleton = false;
-
-    [Tooltip("Farba kory")]
     public Color BarkColor = new Color(0.4f, 0.28f, 0.15f);
-
-    [Tooltip("Automaticka regeneracia pri zmene parametrov")]
+    public bool ProceduralBarkTexture = true;
+    [Range(0f, 1f)] public float BarkRoughness = 0.6f;
+    [Range(64, 512)] public int BarkTextureResolution = 256;
     public bool AutoRegenerate = true;
 
-    // Interne premenne
     private BranchNode _rootNode;
     private List<BranchSegment> _segments;
-    private StrandSystem _strandSystem;
     private MeshFilter _meshFilter;
     private MeshRenderer _meshRenderer;
+    private GameObject _leavesObject;
     private int _lastHash;
 
-    // Statistiky — pristupne z Editora
     [HideInInspector] public float LastGenerationTimeMs;
     [HideInInspector] public int LastNodeCount;
     [HideInInspector] public int LastLSystemLength;
-    [HideInInspector] public int LastStrandCount;
     [HideInInspector] public bool LastWasTruncated;
 
     public BranchNode RootNode => _rootNode;
@@ -126,48 +63,39 @@ public class TreeGenerator : MonoBehaviour
     {
         _meshFilter = GetComponent<MeshFilter>();
         _meshRenderer = GetComponent<MeshRenderer>();
-
         if (_meshRenderer.sharedMaterial == null)
-            _meshRenderer.sharedMaterial = CreateDefaultMaterial();
-
-        bool wasUsingStrands = UseStrands;
-        UseStrands = false;
+        {
+            if (ProceduralBarkTexture)
+                _meshRenderer.sharedMaterial = BarkTextureGenerator.CreateBarkMaterial(
+                    BarkColor, Seed, BarkRoughness, BarkTextureResolution);
+            else
+                _meshRenderer.sharedMaterial = CreateDefaultMaterial(BarkColor, "Bark");
+        }
         GenerateTree();
-        UseStrands = wasUsingStrands;
     }
 
-    void OnDisable()
-    {
-        CleanupMesh();
-    }
+    void OnDisable() { CleanupMesh(); }
 
     void Update()
     {
-        if (AutoRegenerate && !UseStrands)
+        if (AutoRegenerate)
         {
             int hash = ComputeParameterHash();
-            if (hash != _lastHash)
-            {
-                GenerateTree();
-                _lastHash = hash;
-            }
+            if (hash != _lastHash) { GenerateTree(); _lastHash = hash; }
         }
     }
 
     public void GenerateTree()
     {
         Stopwatch sw = Stopwatch.StartNew();
-
         CleanupMesh();
 
-        // 1. L-system
         var rules = GetRulesForSpecies(Species);
         LSystem lSystem = new LSystem(GetAxiomForSpecies(Species), rules, Seed);
         string lSystemString = lSystem.Generate(Iterations);
         LastLSystemLength = lSystemString.Length;
         LastWasTruncated = lSystem.WasTruncated;
 
-        // 2. Turtle interpreter
         TurtleInterpreter turtle = new TurtleInterpreter
         {
             Angle = BranchAngle,
@@ -178,84 +106,169 @@ public class TreeGenerator : MonoBehaviour
             AngleVariation = AngleVariation,
             DivergenceAngle = DivergenceAngle,
             Gravitropism = Gravitropism,
+            Phototropism = Phototropism,
             Seed = Seed
         };
 
         (_rootNode, _segments) = turtle.Interpret(lSystemString);
         LastNodeCount = CountNodes(_rootNode);
 
-        // 3. Strand system
-        LastStrandCount = 0;
-        Mesh mesh;
-
-        if (UseStrands)
-        {
-            _strandSystem = new StrandSystem
-            {
-                StrandRadius = StrandRadius,
-                StrandsPerEndNode = StrandsPerEndNode,
-                PBDIterations = PBDIterations,
-                PBDSteps = 20,
-                MaxTotalStrands = MaxTotalStrands,
-                MedialAxisAttraction = 0.1f,
-                Seed = Seed
-            };
-
-            _strandSystem.Build(_rootNode);
-
-            // Aplikácia Twist operátora, ak je nastavený
-            if (Mathf.Abs(TwistPerLevel) > 0.01f)
-            {
-                ApplyRecursiveTwist(_rootNode, 0f);
-            }
-
-            LastStrandCount = _strandSystem.Strands.Count;
-            mesh = StrandMeshGenerator.GenerateStrandMesh(_rootNode, _strandSystem, StrandInterpolationSteps, RadialSegments);
-        }
-        else
-        {
-            _strandSystem = null;
-            mesh = BranchMeshGenerator.GenerateTreeMesh(_rootNode, RadialSegments, MaxMeshDepth, SmoothNormals);
-        }
-
+        RadiusSmoothing.Smooth(_rootNode, 2, 0.3f);
+        Mesh mesh = BranchMeshGenerator.GenerateTreeMesh(_rootNode, RadialSegments, MaxMeshDepth, SmoothNormals);
         _meshFilter.sharedMesh = mesh;
+
+        GenerateLeafMesh(); // Generovanie lístia
 
         sw.Stop();
         LastGenerationTimeMs = (float)sw.Elapsed.TotalMilliseconds;
         _lastHash = ComputeParameterHash();
     }
 
-    private void ApplyRecursiveTwist(BranchNode node, float currentTwist)
+    public void RebuildMeshOnly()
     {
-        _strandSystem.ApplyTwist(node, currentTwist);
-        foreach (var child in node.Children)
+        if (_rootNode == null) return;
+
+        // Uvoľnenie starého meshu (prevencia memory leaku)
+        if (_meshFilter.sharedMesh != null)
         {
-            ApplyRecursiveTwist(child, currentTwist + TwistPerLevel);
+            if (Application.isPlaying) Destroy(_meshFilter.sharedMesh);
+            else DestroyImmediate(_meshFilter.sharedMesh);
+            _meshFilter.sharedMesh = null;
         }
+
+        RadiusSmoothing.Smooth(_rootNode, 2, 0.3f);
+        _meshFilter.sharedMesh = BranchMeshGenerator.GenerateTreeMesh(_rootNode, RadialSegments, -1, true);
+        LastNodeCount = CountNodes(_rootNode);
+        GenerateLeafMesh();
     }
+
+    /// <summary>
+    /// Pregeneruje materiál kôry s aktuálnymi parametrami.
+    /// Volané z editora alebo pri zmene vizuálnych parametrov.
+    /// </summary>
+    public void RegenerateBarkMaterial()
+    {
+        if (_meshRenderer == null) return;
+
+        // Uvoľni starý materiál
+        if (_meshRenderer.sharedMaterial != null)
+        {
+            if (Application.isPlaying) Destroy(_meshRenderer.sharedMaterial);
+            else DestroyImmediate(_meshRenderer.sharedMaterial);
+        }
+
+        if (ProceduralBarkTexture)
+            _meshRenderer.sharedMaterial = BarkTextureGenerator.CreateBarkMaterial(
+                BarkColor, Seed, BarkRoughness, BarkTextureResolution);
+        else
+            _meshRenderer.sharedMaterial = CreateDefaultMaterial(BarkColor, "Bark");
+    }
+
+    // === GENERÁTOR LÍSTIA ===
+
+    private void GenerateLeafMesh()
+    {
+        if (_leavesObject != null) DestroyImmediate(_leavesObject);
+        if (!EnableLeaves || _rootNode == null) return;
+
+        List<BranchNode> leaves = new List<BranchNode>();
+        CollectLeaves(_rootNode, leaves);
+
+        List<Vector3> verts = new List<Vector3>();
+        List<int> tris = new List<int>();
+        List<Vector2> uvs = new List<Vector2>();
+
+        System.Random rnd = new System.Random(Seed);
+
+        foreach (var leaf in leaves)
+        {
+            // Smer rastu vetvy (pre orientáciu listov)
+            Vector3 branchDir = Vector3.up;
+            if (leaf.Parent != null)
+                branchDir = (leaf.Position - leaf.Parent.Position).normalized;
+
+            // Cluster listov okolo koncového uzla
+            for (int i = 0; i < LeavesPerNode; i++)
+            {
+                // Náhodná veľkosť (70% - 130% základnej veľkosti)
+                float sizeVariation = LeafSize * (0.7f + (float)rnd.NextDouble() * 0.6f);
+
+                // Náhodný offset od uzla (listy nie sú presne na špičke)
+                float offsetDist = sizeVariation * 0.3f * (float)rnd.NextDouble();
+                Vector3 randomOffset = new Vector3(
+                    (float)(rnd.NextDouble() * 2 - 1),
+                    (float)(rnd.NextDouble() * 0.5),
+                    (float)(rnd.NextDouble() * 2 - 1)
+                ).normalized * offsetDist;
+
+                Vector3 leafPos = leaf.Position + randomOffset;
+
+                // Náhodná orientácia — listy sa natáčajú k svetlu (hore)
+                // ale zachovávajú väzbu na smer vetvy
+                float yaw = (float)rnd.NextDouble() * 360f;
+                float pitch = 20f + (float)rnd.NextDouble() * 40f; // 20-60° od vertikály
+                float roll = (float)rnd.NextDouble() * 20f - 10f;
+
+                Quaternion rot = Quaternion.LookRotation(branchDir, Vector3.up)
+                               * Quaternion.Euler(pitch, yaw, roll);
+
+                Vector3 right = rot * Vector3.right * sizeVariation * 0.5f;
+                Vector3 up = rot * Vector3.up * sizeVariation;
+
+                // 4 rohové body quadu
+                Vector3 p0 = leafPos - right;
+                Vector3 p1 = leafPos + right;
+                Vector3 p2 = leafPos - right + up;
+                Vector3 p3 = leafPos + right + up;
+
+                // Jeden quad stačí — materiál má Cull Off (obojstranný)
+                int idx = verts.Count;
+                verts.Add(p0); verts.Add(p1); verts.Add(p2); verts.Add(p3);
+                uvs.Add(new Vector2(0, 0)); uvs.Add(new Vector2(1, 0));
+                uvs.Add(new Vector2(0, 1)); uvs.Add(new Vector2(1, 1));
+
+                tris.Add(idx); tris.Add(idx + 2); tris.Add(idx + 1);
+                tris.Add(idx + 1); tris.Add(idx + 2); tris.Add(idx + 3);
+            }
+        }
+
+        Mesh leafMesh = new Mesh { name = "LeavesMesh" };
+        if (verts.Count > 65000) leafMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        leafMesh.SetVertices(verts);
+        leafMesh.SetTriangles(tris, 0);
+        leafMesh.SetUVs(0, uvs);
+        leafMesh.RecalculateNormals();
+
+        _leavesObject = new GameObject("Leaves");
+        _leavesObject.transform.SetParent(this.transform, false);
+        var mf = _leavesObject.AddComponent<MeshFilter>();
+        var mr = _leavesObject.AddComponent<MeshRenderer>();
+
+        mf.sharedMesh = leafMesh;
+        mr.sharedMaterial = LeafTextureGenerator.CreateLeafMaterial(LeafColor, Seed);
+    }
+
+    private void CollectLeaves(BranchNode node, List<BranchNode> list)
+    {
+        if (node.IsLeaf) list.Add(node);
+        foreach (var child in node.Children) CollectLeaves(child, list);
+    }
+    // ========================
 
     private void CleanupMesh()
     {
-        if (_meshFilter == null) return;
-
-        Mesh oldMesh = _meshFilter.sharedMesh;
-        if (oldMesh != null)
+        if (_meshFilter != null && _meshFilter.sharedMesh != null)
         {
+            if (Application.isPlaying) Destroy(_meshFilter.sharedMesh); else DestroyImmediate(_meshFilter.sharedMesh);
             _meshFilter.sharedMesh = null;
-            #if UNITY_EDITOR
-            if (!UnityEditor.AssetDatabase.Contains(oldMesh))
-                DestroyImmediate(oldMesh);
-            #else
-            Destroy(oldMesh);
-            #endif
         }
+        if (_leavesObject != null) DestroyImmediate(_leavesObject);
     }
 
     private int CountNodes(BranchNode node)
     {
         int count = 1;
-        foreach (var child in node.Children)
-            count += CountNodes(child);
+        foreach (var child in node.Children) count += CountNodes(child);
         return count;
     }
 
@@ -263,164 +276,80 @@ public class TreeGenerator : MonoBehaviour
     {
         switch (species)
         {
-            case TreeSpecies.Deciduous:
-                return new Dictionary<char, List<LSystemRule>>
-                {
-                    { 'F', new List<LSystemRule>
-                        {
-                            new LSystemRule("FF/[&+F-F-F]\\[-F+F+F]", 0.33f),
-                            new LSystemRule("FF\\[&-F+F]//[^+F-F]", 0.33f),
-                            new LSystemRule("FF/[^F-F+F]\\[&F+F-F]", 0.34f)
-                        }
-                    }
-                };
-            case TreeSpecies.Conifer:
-                return new Dictionary<char, List<LSystemRule>>
-                {
-                    { 'F', new List<LSystemRule> { new LSystemRule("FF", 1f) } },
-                    { 'A', new List<LSystemRule>
-                        {
-                            new LSystemRule("F[&+A]/F[&-A]//+A", 0.5f),
-                            new LSystemRule("F[&A]\\F[&+A]//-A", 0.5f)
-                        }
-                    }
-                };
-            case TreeSpecies.Willow:
-                return new Dictionary<char, List<LSystemRule>>
-                {
-                    { 'F', new List<LSystemRule> { new LSystemRule("FF", 1f) } },
-                    { 'A', new List<LSystemRule>
-                        {
-                            new LSystemRule("F[&&&+A]/F[&&&-A]\\F[&&A]", 0.5f),
-                            new LSystemRule("F[&&+A]//F[&&&-A]\\[&&A]", 0.5f)
-                        }
-                    }
-                };
-            case TreeSpecies.Bush:
-                return new Dictionary<char, List<LSystemRule>>
-                {
-                    { 'F', new List<LSystemRule>
-                        {
-                            new LSystemRule("F/[&+F]\\F[&-F]/[^F]", 0.4f),
-                            new LSystemRule("F\\[&+F]F/[^-F]", 0.3f),
-                            new LSystemRule("F/[^-F]\\F[&+F]", 0.3f)
-                        }
-                    }
-                };
-            case TreeSpecies.Palm:
-                return new Dictionary<char, List<LSystemRule>>
-                {
-                    { 'F', new List<LSystemRule> { new LSystemRule("FF", 1f) } },
-                    { 'A', new List<LSystemRule>
-                        {
-                            new LSystemRule("F[&&+A]/[&&-A]//[&&&+A]///[&&&-A]", 0.5f),
-                            new LSystemRule("FF/[&&+A]//[&&-A]///[&&&A]", 0.5f)
-                        }
-                    }
-                };
-            default:
-                return new Dictionary<char, List<LSystemRule>>
-                {
-                    { 'F', new List<LSystemRule> { new LSystemRule("F[+F]F[-F]F", 1f) } }
-                };
+            case TreeSpecies.Deciduous: return new Dictionary<char, List<LSystemRule>> { { 'F', new List<LSystemRule> { new LSystemRule("FF/[&+F-F-F]\\[-F+F+F]", 0.33f), new LSystemRule("FF\\[&-F+F]//[^+F-F]", 0.33f), new LSystemRule("FF/[^F-F+F]\\[&F+F-F]", 0.34f) } } };
+            case TreeSpecies.Conifer: return new Dictionary<char, List<LSystemRule>> { { 'F', new List<LSystemRule> { new LSystemRule("FF", 1f) } }, { 'A', new List<LSystemRule> { new LSystemRule("F[&+A]/F[&-A]//+A", 0.5f), new LSystemRule("F[&A]\\F[&+A]//-A", 0.5f) } } };
+            case TreeSpecies.Willow: return new Dictionary<char, List<LSystemRule>> { { 'F', new List<LSystemRule> { new LSystemRule("FF", 1f) } }, { 'A', new List<LSystemRule> { new LSystemRule("F[&&&+A]/F[&&&-A]\\F[&&A]", 0.5f), new LSystemRule("F[&&+A]//F[&&&-A]\\[&&A]", 0.5f) } } };
+            case TreeSpecies.Bush: return new Dictionary<char, List<LSystemRule>> { { 'F', new List<LSystemRule> { new LSystemRule("F/[&+F]\\F[&-F]/[^F]", 0.4f), new LSystemRule("F\\[&+F]F/[^-F]", 0.3f), new LSystemRule("F/[^-F]\\F[&+F]", 0.3f) } } };
+            case TreeSpecies.Palm: return new Dictionary<char, List<LSystemRule>> { { 'F', new List<LSystemRule> { new LSystemRule("FF", 1f) } }, { 'A', new List<LSystemRule> { new LSystemRule("F[&&+A]/[&&-A]//[&&&+A]///[&&&-A]", 0.5f), new LSystemRule("FF/[&&+A]//[&&-A]///[&&&A]", 0.5f) } } };
+            default: return new Dictionary<char, List<LSystemRule>> { { 'F', new List<LSystemRule> { new LSystemRule("F[+F]F[-F]F", 1f) } } };
         }
     }
 
-    private string GetAxiomForSpecies(TreeSpecies species)
-    {
-        switch (species)
-        {
-            case TreeSpecies.Conifer:
-            case TreeSpecies.Willow:
-            case TreeSpecies.Palm:
-                return "A";
-            default:
-                return "F";
-        }
-    }
+    private string GetAxiomForSpecies(TreeSpecies species) { return (species == TreeSpecies.Conifer || species == TreeSpecies.Willow || species == TreeSpecies.Palm) ? "A" : "F"; }
 
     void OnDrawGizmos()
     {
         if (!ShowSkeleton || _rootNode == null) return;
         DrawNodeGizmos(_rootNode);
-
-        if (_strandSystem != null && UseStrands)
-        {
-            Gizmos.color = new Color(0.2f, 0.6f, 1f, 0.5f);
-            foreach (var strand in _strandSystem.Strands)
-            {
-                for (int i = 0; i < strand.WorldPositions.Count - 1; i++)
-                {
-                    Gizmos.DrawLine(
-                        strand.WorldPositions[i] + transform.position,
-                        strand.WorldPositions[i + 1] + transform.position
-                    );
-                }
-            }
-        }
     }
 
     private void DrawNodeGizmos(BranchNode node)
     {
         foreach (var child in node.Children)
         {
-            float t = Mathf.Clamp01(child.Depth / 5f);
-            Gizmos.color = Color.Lerp(Color.red, Color.yellow, t);
-            Gizmos.DrawLine(node.Position + transform.position,
-                           child.Position + transform.position);
-
-            Gizmos.color = Color.green;
-            Gizmos.DrawWireSphere(child.Position + transform.position, child.Radius * 0.5f);
-
+            Gizmos.color = Color.Lerp(Color.red, Color.yellow, Mathf.Clamp01(child.Depth / 5f));
+            Gizmos.DrawLine(node.Position + transform.position, child.Position + transform.position);
             DrawNodeGizmos(child);
         }
     }
 
-    private Material CreateDefaultMaterial()
+    private Material CreateDefaultMaterial(Color color, string name)
     {
         Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null)
-            shader = Shader.Find("Standard");
+        bool isURP = shader != null;
 
-        Material mat = new Material(shader);
-        mat.name = "BarkMaterial";
-        mat.color = BarkColor;
+        if (!isURP) shader = Shader.Find("Standard");
+
+        Material mat = new Material(shader) { name = name + "Material" };
+
+        if (isURP)
+        {
+            mat.SetColor("_BaseColor", color);
+            mat.SetFloat("_Smoothness", 0.0f);
+        }
+        else
+        {
+            // Pre starý (Standard) render pipeline
+            mat.color = color;
+            mat.SetFloat("_Glossiness", 0.0f);
+        }
+
         return mat;
+    }
+
+    public void LoadPreset() { if (SpeciesPreset != null) SpeciesPreset.ApplyTo(this); }
+    public void SaveToPreset()
+    {
+        if (SpeciesPreset != null)
+        {
+            SpeciesPreset.SaveFrom(this);
+#if UNITY_EDITOR
+            UnityEditor.EditorUtility.SetDirty(SpeciesPreset);
+#endif
+        }
     }
 
     private int ComputeParameterHash()
     {
-        int hash = 17;
-        hash = hash * 31 + Iterations;
-        hash = hash * 31 + Seed;
-        hash = hash * 31 + (int)Species;
-        hash = hash * 31 + BranchAngle.GetHashCode();
-        hash = hash * 31 + SegmentLength.GetHashCode();
-        hash = hash * 31 + TrunkRadius.GetHashCode();
-        hash = hash * 31 + RadiusDecay.GetHashCode();
-        hash = hash * 31 + LengthDecay.GetHashCode();
-        hash = hash * 31 + AngleVariation.GetHashCode();
-        hash = hash * 31 + DivergenceAngle.GetHashCode();
-        hash = hash * 31 + Gravitropism.GetHashCode();
-        hash = hash * 31 + TwistPerLevel.GetHashCode();
-        hash = hash * 31 + RadialSegments;
-        hash = hash * 31 + MaxMeshDepth;
-        hash = hash * 31 + (SmoothNormals ? 1 : 0);
-        hash = hash * 31 + (UseStrands ? 1 : 0);
-        hash = hash * 31 + StrandsPerEndNode;
-        hash = hash * 31 + StrandRadius.GetHashCode();
-        hash = hash * 31 + PBDIterations;
-        hash = hash * 31 + StrandInterpolationSteps;
-        hash = hash * 31 + MaxTotalStrands;
+        int hash = Iterations.GetHashCode() ^ Seed ^ (int)Species;
+        hash ^= BranchAngle.GetHashCode() ^ SegmentLength.GetHashCode();
+        hash ^= TrunkRadius.GetHashCode() ^ RadiusDecay.GetHashCode();
+        hash ^= LengthDecay.GetHashCode() ^ AngleVariation.GetHashCode();
+        hash ^= DivergenceAngle.GetHashCode() ^ Gravitropism.GetHashCode();
+        hash ^= Phototropism.GetHashCode() ^ (EnableLeaves ? 1 : 0);
+        hash ^= LeafSize.GetHashCode() ^ RadialSegments ^ (LeavesPerNode << 16);
+        hash ^= (SmoothNormals ? 256 : 0) ^ MaxMeshDepth;
         return hash;
     }
 }
-
-public enum TreeSpecies
-{
-    Deciduous,
-    Conifer,
-    Willow,
-    Bush,
-    Palm
-}
+public enum TreeSpecies { Deciduous, Conifer, Willow, Bush, Palm }

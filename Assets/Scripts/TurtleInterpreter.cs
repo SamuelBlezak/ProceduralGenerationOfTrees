@@ -2,43 +2,32 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 3D Turtle interpreter — premeni L-system retazec na skeletalny graf stromu.
-/// 
-/// Podporovane symboly:
-///   F  — pohyb vpred (vytvori segment vetvy)
-///   +  — otocenie doprava (yaw +)
-///   -  — otocenie dolava (yaw -)
-///   &  — sklon dole (pitch +)
-///   ^  — sklon hore (pitch -)
-///   \  — naklonenie doprava (roll +)
-///   /  — naklonenie dolava (roll -)
-///   [  — uloz stav (zaciatok vetvy)
-///   ]  — obnov stav (koniec vetvy)
-///   !  — zmensi hrubku
-///
-/// Zmeny oproti v1:
-///   - Opraveny dvojity taper (radius urcuje vylucne pipe model)
-///   - Pridana gravitropia (vetvy sa ohybaju nadol)
-///   - Segmenty sa aktualizuju po pipe modeli
+/// 3D Turtle interpreter — premeni L-system retazec na skeletalny graf stromu
 /// </summary>
 public class TurtleInterpreter
 {
-    public float Angle = 25f;
-    public float StepLength = 1f;
-    public float InitialRadius = 0.5f;
-    public float RadiusDecay = 0.75f;
-    public float LengthDecay = 0.85f;
-    public float AngleVariation = 5f;
-    public float DivergenceAngle = 137.5f;
+    public float Angle = 25f; /// zakladny uhol rotacie pri symboloch + - & ^ \ /
+    public float StepLength = 1f; /// zakladná dlzka jedného kroku pri symbole F
+    public float InitialRadius = 0.5f; /// pociatocny polomer kmena pri koreni
+    public float RadiusDecay = 0.75f; /// postupne zmensovanie hrubky
+    public float LengthDecay = 0.85f; /// pri vetveni sa dlzka dalsich vetiev zmensuje
+    public float AngleVariation = 5f; /// nahodna odchylka uhla (prirodzenejsi vzhlad)
+    public float DivergenceAngle = 137.5f; /// vyuzitie pri divergencii vetiev (aby sa vetvy neprekryvali)
+
+    public float Gravitropism = 0.08f; /// sila gravitropizmu - ako velmi sa vetvy ohybaju nadol
+    public float Phototropism = 0.05f; /// sila fototropizmu — ako velmi sa vetvy tahaju nahor k svetlu
+
+    public int Seed = 42; /// nejaky seed
 
     /// <summary>
-    /// Sila gravitropie (0-1). Vetvy sa postupne ohybaju nadol.
-    /// 0 = ziadna, 0.08 = mierna (realisticke), 0.3 = silna (vrba).
+    /// aktualny stav "korytnacky" pocas interpretacie
+    /// uchovava:
+    /// - poziciu
+    /// - orientaciu
+    /// - aktualnu dlzku kroku
+    /// - hlbku vetvenia
+    /// - aktualny uzol stromu
     /// </summary>
-    public float Gravitropism = 0.08f;
-
-    public int Seed = 42;
-
     private struct TurtleState
     {
         public Vector3 Position;
@@ -48,13 +37,18 @@ public class TurtleInterpreter
         public BranchNode CurrentNode;
     }
 
+    /// <summary>
+    /// Interpretuje L-system reťazec a vytvorí stromovú kostru:
+    /// - root = koreň stromu
+    /// - segments = všetky segmenty vetiev medzi uzlami
+    /// </summary>
     public (BranchNode root, List<BranchSegment> segments) Interpret(string lSystemString)
     {
-        System.Random rng = new System.Random(Seed);
-
-        BranchNode root = new BranchNode(Vector3.zero, Quaternion.identity, InitialRadius, 0);
+        System.Random rng = new System.Random(Seed); /// nahodny generator so zadanym seedom
+        BranchNode root = new BranchNode(Vector3.zero, Quaternion.identity, InitialRadius, 0); /// koren stromu v strede sveta bez rotacie
         root.Index = 0;
 
+        /// pociatocny stav turtle
         TurtleState state = new TurtleState
         {
             Position = Vector3.zero,
@@ -64,77 +58,61 @@ public class TurtleInterpreter
             CurrentNode = root
         };
 
-        Stack<TurtleState> stateStack = new Stack<TurtleState>();
-        List<BranchSegment> segments = new List<BranchSegment>();
-        int nodeIndex = 1;
-        int branchCounter = 0;
+        Stack<TurtleState> stateStack = new Stack<TurtleState>(); /// zasobnik stavov pre vetvenie ([ a ])
+        List<BranchSegment> segments = new List<BranchSegment>(); /// zoznam všetkych segmentov vetiev
+        int nodeIndex = 1;  /// cislovanie uzlov
+        int branchCounter = 0; /// pocitanie vetiev pre divergence angle
 
+        /// prechadzanie znak po znaku cez l-sys retazec
         foreach (char c in lSystemString)
         {
             switch (c)
             {
                 case 'F':
-                {
-                    // Gravitropia — mierne otocenie smerom nadol
-                    if (Gravitropism > 0f && state.Depth > 0)
                     {
-                        Vector3 currentUp = state.Orientation * Vector3.up;
-                        float horizontality = 1f - Mathf.Abs(Vector3.Dot(currentUp, Vector3.up));
-                        float gravAngle = Gravitropism * horizontality * (1f + state.Depth * 0.3f);
-
-                        Vector3 gravAxis = Vector3.Cross(currentUp, Vector3.down);
-                        if (gravAxis.sqrMagnitude > 0.001f)
+                        /// GRAVITROPIZMUS = vetvy sa jemne ohybaju nadol
+                        /// pouziva sa len mimo kmena (Depth > 0)
+                        if (Gravitropism > 0f && state.Depth > 0)
                         {
-                            state.Orientation = Quaternion.AngleAxis(
-                                gravAngle * Mathf.Rad2Deg, gravAxis.normalized
-                            ) * state.Orientation;
+                            Vector3 currentUp = state.Orientation * Vector3.up; /// aktualny smer "hore" podla orientacie vetvy
+                            float horizontality = 1f - Mathf.Abs(Vector3.Dot(currentUp, Vector3.up)); /// kontrola ako velmi je vetva horizontalna (0 - vert, 1 - horiz)
+                            float gravAngle = Gravitropism * horizontality * (1f + state.Depth * 0.3f); /// uhol ohybu (gravito * horizontalita * hlbka vetvy)
+
+                            Vector3 gravAxis = Vector3.Cross(currentUp, Vector3.down); /// osa rotacie pre ohyb smerom nadol
+                            if (gravAxis.sqrMagnitude > 0.001f) /// ak je os dostatocne velka, aplikuj ohyb
+                            {
+                                state.Orientation = Quaternion.AngleAxis(gravAngle * Mathf.Rad2Deg, gravAxis.normalized) * state.Orientation;
+                            }
                         }
+
+                        /// FOTOTROPIZMUS = vetvy sa tahaju nahor za svetlom
+                        /// tiez len mimo kmena (Depth > 0)
+                        if (Phototropism > 0f && state.Depth > 0)
+                        {
+                            Vector3 currentDir = state.Orientation * Vector3.up;
+                            Vector3 targetDir = Vector3.Slerp(currentDir, Vector3.up, Phototropism * 0.5f).normalized;
+                            Quaternion bend = Quaternion.FromToRotation(currentDir, targetDir);
+                            state.Orientation = bend * state.Orientation;
+                        }
+
+                        Vector3 forward = state.Orientation * Vector3.up;
+                        Vector3 newPos = state.Position + forward * state.CurrentLength;
+
+                        BranchNode newNode = new BranchNode(newPos, state.Orientation, 0f, state.Depth, state.CurrentNode);
+                        newNode.Index = nodeIndex++;
+
+                        segments.Add(new BranchSegment { Start = state.Position, End = newPos, StartRadius = 0f, EndRadius = 0f, Depth = state.Depth, StartNode = state.CurrentNode, EndNode = newNode });
+
+                        state.Position = newPos;
+                        state.CurrentNode = newNode;
+                        break;
                     }
-
-                    Vector3 forward = state.Orientation * Vector3.up;
-                    Vector3 newPos = state.Position + forward * state.CurrentLength;
-
-                    // Radius je docasny — pipe model ho prepocita
-                    BranchNode newNode = new BranchNode(
-                        newPos, state.Orientation, 0f, state.Depth, state.CurrentNode
-                    );
-                    newNode.Index = nodeIndex++;
-
-                    segments.Add(new BranchSegment
-                    {
-                        Start = state.Position,
-                        End = newPos,
-                        StartRadius = 0f,
-                        EndRadius = 0f,
-                        Depth = state.Depth,
-                        StartNode = state.CurrentNode,
-                        EndNode = newNode
-                    });
-
-                    state.Position = newPos;
-                    state.CurrentNode = newNode;
-                    break;
-                }
-
-                case '+':
-                    state.Orientation *= Quaternion.Euler(0, 0, Angle + RandomVariation(rng));
-                    break;
-                case '-':
-                    state.Orientation *= Quaternion.Euler(0, 0, -(Angle + RandomVariation(rng)));
-                    break;
-                case '&':
-                    state.Orientation *= Quaternion.Euler(Angle + RandomVariation(rng), 0, 0);
-                    break;
-                case '^':
-                    state.Orientation *= Quaternion.Euler(-(Angle + RandomVariation(rng)), 0, 0);
-                    break;
-                case '\\':
-                    state.Orientation *= Quaternion.Euler(0, Angle + RandomVariation(rng), 0);
-                    break;
-                case '/':
-                    state.Orientation *= Quaternion.Euler(0, -(Angle + RandomVariation(rng)), 0);
-                    break;
-
+                case '+': state.Orientation *= Quaternion.Euler(0, 0, Angle + RandomVariation(rng)); break;
+                case '-': state.Orientation *= Quaternion.Euler(0, 0, -(Angle + RandomVariation(rng))); break;
+                case '&': state.Orientation *= Quaternion.Euler(Angle + RandomVariation(rng), 0, 0); break;
+                case '^': state.Orientation *= Quaternion.Euler(-(Angle + RandomVariation(rng)), 0, 0); break;
+                case '\\': state.Orientation *= Quaternion.Euler(0, Angle + RandomVariation(rng), 0); break;
+                case '/': state.Orientation *= Quaternion.Euler(0, -(Angle + RandomVariation(rng)), 0); break;
                 case '[':
                     stateStack.Push(state);
                     state.Depth++;
@@ -143,21 +121,14 @@ public class TurtleInterpreter
                     float divergence = DivergenceAngle * branchCounter + RandomVariation(rng) * 3f;
                     state.Orientation *= Quaternion.Euler(0, divergence, 0);
                     break;
-
                 case ']':
-                    if (stateStack.Count > 0)
-                        state = stateStack.Pop();
-                    break;
-
-                case '!':
+                    if (stateStack.Count > 0) state = stateStack.Pop();
                     break;
             }
         }
 
-        // Pipe model — jediny zdroj pravdy pre polomery
         RecalculateRadii(root);
 
-        // Aktualizuj segmenty s polomermi z pipe modelu
         for (int i = 0; i < segments.Count; i++)
         {
             var seg = segments[i];
@@ -169,9 +140,6 @@ public class TurtleInterpreter
         return (root, segments);
     }
 
-    /// <summary>
-    /// Pipe model (da Vinciho pravidlo): r_parent^2 = suma(r_child^2)
-    /// </summary>
     private float RecalculateRadii(BranchNode node)
     {
         if (node.IsLeaf)
@@ -179,18 +147,12 @@ public class TurtleInterpreter
             node.Radius = InitialRadius * 0.02f;
             return node.Radius * node.Radius;
         }
-
         float sumSquared = 0f;
-        foreach (var child in node.Children)
-            sumSquared += RecalculateRadii(child);
-
+        foreach (var child in node.Children) sumSquared += RecalculateRadii(child);
         node.Radius = Mathf.Sqrt(sumSquared);
         node.Radius = Mathf.Min(node.Radius, InitialRadius);
         return node.Radius * node.Radius;
     }
 
-    private float RandomVariation(System.Random rng)
-    {
-        return (float)(rng.NextDouble() * 2 - 1) * AngleVariation;
-    }
+    private float RandomVariation(System.Random rng) { return (float)(rng.NextDouble() * 2 - 1) * AngleVariation; }
 }

@@ -3,12 +3,16 @@ using UnityEngine;
 
 /// <summary>
 /// Generátor meshu pre vetvy stromu.
-/// OPRAVA: 100% vodotesný mesh (Watertight Mesh). 
-/// Všetky detské vetvy bezvýhradne zdieľajú počiatočný kruh vrcholov (ring) 
-/// so svojím rodičom. To úplne eliminuje diery, medzery a plávajúce polygóny.
+/// 
+/// Oprava diamantových artefaktov:
+///   - Na uzloch s 1 dieťaťom: zdieľaný ring (hladká kontinuácia)
+///   - Na vetveniach (viac detí): každé dieťa dostane VLASTNÝ štartovací ring
+///     s frame transportovaným pre JEHO smer → žiadne twisty
+///   - Adaptívne radial segments: kmeň 12-16, tenké vetvy 4-6 (zafixované pre kontinuálne segmenty)
 /// </summary>
 public static class BranchMeshGenerator
 {
+
     public static Mesh GenerateTreeMesh(BranchNode root, int radialSegments = 8, int maxDepth = -1, bool smoothMesh = true)
     {
         List<Vector3> vertices = new List<Vector3>();
@@ -16,27 +20,28 @@ public static class BranchMeshGenerator
         List<Vector2> uvs = new List<Vector2>();
         List<Vector3> normals = new List<Vector3>();
 
-        Dictionary<BranchNode, int> nodeRingCache = new Dictionary<BranchNode, int>();
-
-        // 1. Zistenie počiatočného smeru pre koreň
         Vector3 initialDir = Vector3.up;
-        if (root.Children.Count > 0) 
+        if (root.Children.Count > 0)
             initialDir = (root.Children[0].Position - root.Position).normalized;
 
-        // 2. Počiatočná kolmica (Normal) pre koreň
         Vector3 initialNormal = Vector3.Cross(initialDir, Vector3.right);
-        if (initialNormal.sqrMagnitude < 0.01f) 
+        if (initialNormal.sqrMagnitude < 0.01f)
             initialNormal = Vector3.Cross(initialDir, Vector3.forward);
         initialNormal.Normalize();
         Vector3 initialBinormal = Vector3.Cross(initialDir, initialNormal).normalized;
 
-        // 3. VYTVORENIE KOREŇOVÉHO KRUHU (Base Ring)
-        int rootRingBase = vertices.Count;
-        GenerateRing(root.Position, initialNormal, initialBinormal, root.Radius, 0f, radialSegments, vertices, uvs, normals);
-        nodeRingCache[root] = rootRingBase;
+        // Adaptívny počet segmentov pre koreň
+        int rootSegs = AdaptiveSegments(root.Radius, radialSegments);
 
-        // 4. Rekurzívne prechádzanie a generovanie vetiev
-        TraverseBranches(root, vertices, triangles, uvs, normals, radialSegments, maxDepth, nodeRingCache, 0f, initialDir, initialNormal);
+        int rootRingBase = vertices.Count;
+        GenerateRing(root.Position, initialNormal, initialBinormal,
+                    root.Radius, 0f, rootSegs, root.Depth,
+                    vertices, uvs, normals);
+
+        TraverseBranches(root, rootRingBase, rootSegs,
+                        vertices, triangles, uvs, normals,
+                        radialSegments, maxDepth, 0f,
+                        initialDir, initialNormal);
 
         Mesh mesh = new Mesh { name = "TreeMesh" };
         if (vertices.Count == 0) return mesh;
@@ -49,7 +54,7 @@ public static class BranchMeshGenerator
         mesh.SetUVs(0, uvs);
 
         if (smoothMesh && vertices.Count < 50000)
-            mesh.RecalculateNormals(); // Priemeruje normály v spojoch pre dokonalú hladkosť
+            mesh.RecalculateNormals();
         else
             mesh.SetNormals(normals);
 
@@ -58,63 +63,119 @@ public static class BranchMeshGenerator
     }
 
     private static void TraverseBranches(
-        BranchNode node, List<Vector3> vertices, List<int> triangles, List<Vector2> uvs, List<Vector3> normals,
-        int radSegs, int maxDepth, Dictionary<BranchNode, int> nodeRingCache, float accumulatedV,
+        BranchNode node, int nodeRingBase, int nodeRadSegs,
+        List<Vector3> vertices, List<int> triangles,
+        List<Vector2> uvs, List<Vector3> normals,
+        int baseRadSegs, int maxDepth, float accumulatedV,
         Vector3 prevDir, Vector3 prevNormal)
     {
-        // KĽÚČOVÁ OPRAVA: KAŽDÁ vetva vychádzajúca z tohto uzla natvrdo použije jeho ring!
-        // Žiadne generovanie nových odtrhnutých kruhov na spojoch.
-        int startRingBase = nodeRingCache[node]; 
-
         foreach (var child in node.Children)
         {
             if (maxDepth >= 0 && child.Depth > maxDepth) continue;
-            
-            // Zabezpečenie proti príliš tenkým, neviditeľným vetvičkám, ktoré by zrútili výpočet
             if (node.Radius < 0.0005f && child.Radius < 0.0005f) continue;
 
             Vector3 direction = child.Position - node.Position;
             float segLength = direction.magnitude;
             if (segLength < 0.0001f) continue;
-            direction /= segLength; // Normalizácia
+            direction /= segLength;
 
-            // --- BISHOP FRAME (Parallel Transport) ---
-            // Zabraňuje krúteniu "ostnatého drôtu" po dĺžke vetvy
+            // Bishop Frame s threshold — mala zmena smeru = zachovaj frame
             Vector3 currentNormal = prevNormal;
-            Vector3 axis = Vector3.Cross(prevDir, direction);
-            if (axis.sqrMagnitude > 0.0001f)
+            float angleChange = Vector3.Angle(prevDir, direction);
+            if (angleChange > 0.5f) // Threshold — pod 0.5° neotáčaj frame
             {
-                float angle = Vector3.Angle(prevDir, direction);
-                currentNormal = Quaternion.AngleAxis(angle, axis.normalized) * prevNormal;
+                Vector3 axis = Vector3.Cross(prevDir, direction);
+                if (axis.sqrMagnitude > 0.0001f)
+                    currentNormal = Quaternion.AngleAxis(angleChange, axis.normalized) * prevNormal;
             }
             Vector3 currentBinormal = Vector3.Cross(direction, currentNormal).normalized;
 
+            // Adaptívne radial segments - pri priamom pokračovaní držíme konštantný počet segmentov!
+            int childRadSegs;
+            if (node.Children.Count == 1)
+            {
+                childRadSegs = nodeRadSegs; // Zdedené pre hladký spoj
+            }
+            else
+            {
+                childRadSegs = AdaptiveSegments(child.Radius, baseRadSegs); // Prepočítaj pre nové odbočky
+            }
+
+            // Štartovací ring — závisí od počtu detí rodiča
+            int startRingBase;
+            int startRadSegs;
+
+            if (node.Children.Count == 1 && nodeRadSegs == childRadSegs)
+            {
+                // Priamy segment (1 dieťa) — zdieľaj rodičovský ring
+                startRingBase = nodeRingBase;
+                startRadSegs = nodeRadSegs;
+            }
+            else
+            {
+                // Vetvenie alebo zmena detail úrovne — nový ring na pozícii rodiča
+                // s frame transportovaným pre TENTO smer dieťaťa
+                startRadSegs = childRadSegs;
+                startRingBase = vertices.Count;
+                GenerateRing(node.Position, currentNormal, currentBinormal,
+                            node.Radius, accumulatedV, startRadSegs, node.Depth,
+                            vertices, uvs, normals);
+            }
+
             float vEnd = accumulatedV + segLength;
 
-            // Vygenerovanie nového kruhu len na KONCI segmentu (pri detskom uzle)
+            // Koncový ring
             int endRingBase = vertices.Count;
-            GenerateRing(child.Position, currentNormal, currentBinormal, child.Radius, vEnd, radSegs, vertices, uvs, normals);
-            nodeRingCache[child] = endRingBase;
+            GenerateRing(child.Position, currentNormal, currentBinormal,
+                        child.Radius, vEnd, childRadSegs, child.Depth,
+                        vertices, uvs, normals);
 
-            // Spojenie štartovacieho kruhu (zdieľaného s rodičom) s koncovým kruhom
-            ConnectRings(startRingBase, endRingBase, radSegs, triangles);
+            // Spoj ringy (musia mať rovnaký počet segmentov)
+            ConnectRings(startRingBase, endRingBase, childRadSegs, triangles);
 
-            // Pokračujeme ďalej do koruny s aktuálnymi vektormi
-            TraverseBranches(child, vertices, triangles, uvs, normals, radSegs, maxDepth, nodeRingCache, vEnd, direction, currentNormal);
+            // Rekurzia — prenášame koncový ring pre ďalší segment
+            TraverseBranches(child, endRingBase, childRadSegs,
+                           vertices, triangles, uvs, normals,
+                           baseRadSegs, maxDepth, vEnd,
+                           direction, currentNormal);
         }
     }
 
-    private static void GenerateRing(Vector3 center, Vector3 normal, Vector3 binormal, float radius, float vCoord, int radialSegments,
+    /// <summary>
+    /// Adaptívny počet radial segments podľa hrúbky vetvy.
+    /// Hrubší kmeň dostane viac segmentov pre hladší tvar.
+    /// </summary>
+    private static int AdaptiveSegments(float radius, int baseSegments)
+    {
+        if (radius > 0.15f) return Mathf.Max(baseSegments, 12); // Hrubý kmeň
+        if (radius > 0.08f) return Mathf.Max(baseSegments, 10); // Hlavné vetvy
+        if (radius > 0.03f) return baseSegments;                 // Stredné vetvy
+        if (radius > 0.01f) return Mathf.Max(4, baseSegments / 2); // Tenké
+        return 4;                                                  // Vetvičky
+    }
+
+    private static void GenerateRing(
+        Vector3 center, Vector3 normal, Vector3 binormal,
+        float radius, float vCoord, int radialSegments, int depth,
         List<Vector3> vertices, List<Vector2> uvs, List<Vector3> normals)
     {
+        // Parameter pre tiling textúry kôry (čím väčšie číslo, tým viac sa kôra opakuje po dĺžke)
+        float vScale = 2.0f;
+
         for (int i = 0; i <= radialSegments; i++)
         {
-            float angle = (float)i / radialSegments * Mathf.PI * 2f;
-            Vector3 offset = normal * Mathf.Cos(angle) + binormal * Mathf.Sin(angle);
-            
-            vertices.Add(center + offset * radius);
-            normals.Add(offset.normalized);
-            uvs.Add(new Vector2((float)i / radialSegments, vCoord));
+            int idx = i % radialSegments;
+            float t = (float)idx / radialSegments;
+            float angle = t * Mathf.PI * 2f;
+
+            Vector3 offset = (normal * Mathf.Cos(angle) + binormal * Mathf.Sin(angle)) * radius;
+
+            vertices.Add(center + offset);
+            normals.Add(offset.magnitude > 0.0001f ? offset.normalized : normal);
+
+            // X (u) = ide dookola (0 až 1)
+            // Y (v) = ide po dĺžke vetvy, upravené o vScale aby kôra nebola natiahnutá
+            uvs.Add(new Vector2(t, vCoord * vScale));
         }
     }
 

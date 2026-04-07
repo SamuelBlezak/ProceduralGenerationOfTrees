@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEditor;
 using System.IO;
 using System.Text;
-using System.Globalization; // <-- PRIDANE PRE SPRAVNE FORMATOVANIE CISEL
+using System.Globalization;
 
 [CustomEditor(typeof(TreeGenerator))]
 public class TreeGeneratorEditor : Editor
@@ -15,10 +15,9 @@ public class TreeGeneratorEditor : Editor
     {
         TreeGenerator generator = (TreeGenerator)target;
 
-        // Hlavne tlacidlo
         EditorGUILayout.Space(5);
         GUI.backgroundColor = new Color(0.3f, 0.8f, 0.3f);
-        if (GUILayout.Button("🌳  Generuj Strom  🌳", GUILayout.Height(35)))
+        if (GUILayout.Button("Generuj Strom", GUILayout.Height(35)))
         {
             Undo.RecordObject(generator, "Generate Tree");
             generator.GenerateTree();
@@ -29,14 +28,14 @@ public class TreeGeneratorEditor : Editor
         EditorGUILayout.Space(5);
 
         EditorGUILayout.BeginHorizontal();
-        if (GUILayout.Button("🎲 Nahodny Seed"))
+        if (GUILayout.Button("Nahodny Seed"))
         {
             Undo.RecordObject(generator, "Random Seed");
             generator.Seed = Random.Range(0, 99999);
             generator.GenerateTree();
             EditorUtility.SetDirty(generator);
         }
-        if (GUILayout.Button("📋 Kopiruj Seed"))
+        if (GUILayout.Button("Kopiruj Seed"))
         {
             GUIUtility.systemCopyBuffer = generator.Seed.ToString();
             Debug.Log($"Seed {generator.Seed} skopirovany do schranky.");
@@ -45,48 +44,73 @@ public class TreeGeneratorEditor : Editor
 
         EditorGUILayout.Space(5);
 
-        // --- TLACIDLO NA EXPORT DO BLENDERU ---
+        if (generator.SpeciesPreset != null)
+        {
+            EditorGUILayout.BeginHorizontal();
+            GUI.backgroundColor = new Color(0.6f, 0.8f, 1f);
+            if (GUILayout.Button("Nacitaj Preset"))
+            {
+                Undo.RecordObject(generator, "Load Preset");
+                generator.LoadPreset();
+                generator.GenerateTree();
+                EditorUtility.SetDirty(generator);
+            }
+            GUI.backgroundColor = new Color(1f, 0.9f, 0.6f);
+            if (GUILayout.Button("Uloz do Presetu"))
+            {
+                Undo.RecordObject(generator.SpeciesPreset, "Save Preset");
+                generator.SaveToPreset();
+            }
+            GUI.backgroundColor = Color.white;
+            EditorGUILayout.EndHorizontal();
+        }
+
+        EditorGUILayout.Space(5);
+
         GUI.backgroundColor = new Color(0.2f, 0.6f, 0.9f);
-        if (GUILayout.Button("💾 Exportuj do .OBJ (Pre Blender)", GUILayout.Height(25)))
+        if (GUILayout.Button("Exportuj do .OBJ (Pre Blender)", GUILayout.Height(25)))
         {
             ExportTreeToObj(generator);
         }
         GUI.backgroundColor = Color.white;
-        // ---------------------------------------------
+
+        EditorGUILayout.Space(5);
+
+        GUI.backgroundColor = new Color(0.6f, 0.9f, 0.7f);
+        if (GUILayout.Button("Prebuduj Mesh (Update z grafu)", GUILayout.Height(25)))
+        {
+            Undo.RecordObject(generator, "Rebuild Mesh");
+            generator.RebuildMeshOnly();
+            EditorUtility.SetDirty(generator);
+        }
+        GUI.backgroundColor = Color.white;
+
+        EditorGUILayout.Space(5);
+
+        GUI.backgroundColor = new Color(0.85f, 0.65f, 0.4f);
+        if (GUILayout.Button("Pregeneruj Textúru Kôry", GUILayout.Height(25)))
+        {
+            Undo.RecordObject(generator, "Regenerate Bark");
+            generator.RegenerateBarkMaterial();
+            EditorUtility.SetDirty(generator);
+        }
+        GUI.backgroundColor = Color.white;
 
         EditorGUILayout.Space(10);
-
         DrawDefaultInspector();
-
-        // Varovania
-        if (generator.UseStrands)
-        {
-            EditorGUILayout.Space(5);
-            EditorGUILayout.HelpBox(
-                "Strand mod: AutoRegenerate je vypnute. Pouzi tlacidlo 'Generuj Strom' po zmene parametrov.",
-                MessageType.Info
-            );
-        }
 
         if (generator.LastWasTruncated)
         {
             EditorGUILayout.Space(5);
-            EditorGUILayout.HelpBox(
-                "L-system bol obmedzeny bezpecnostnym limitom! Zniz Iterations.",
-                MessageType.Error
-            );
+            EditorGUILayout.HelpBox("L-system bol obmedzeny bezpecnostnym limitom! Zniz Iterations.", MessageType.Error);
         }
 
         if (generator.Iterations >= 6)
         {
             EditorGUILayout.Space(5);
-            EditorGUILayout.HelpBox(
-                "Vysoky pocet iteracii moze sposobit pomalost. Odporucame 4-5.",
-                MessageType.Warning
-            );
+            EditorGUILayout.HelpBox("Vysoky pocet iteracii moze sposobit pomalost. Odporucame 4-5.", MessageType.Warning);
         }
 
-        // Statistiky
         EditorGUILayout.Space(10);
         _showStats = EditorGUILayout.Foldout(_showStats, "📊 Statistiky Stromu");
         if (_showStats)
@@ -97,28 +121,19 @@ public class TreeGeneratorEditor : Editor
             if (mf != null && mf.sharedMesh != null)
             {
                 Mesh mesh = mf.sharedMesh;
-
                 string timeStr = $"{generator.LastGenerationTimeMs:F1} ms";
-                if (generator.LastGenerationTimeMs > 500f)
-                    timeStr += " ⚠️ pomale";
-                EditorGUILayout.LabelField("Cas generovania", timeStr);
+                if (generator.LastGenerationTimeMs > 500f) timeStr += " ⚠️ pomale";
 
+                EditorGUILayout.LabelField("Cas generovania", timeStr);
                 EditorGUILayout.LabelField("Vrcholy (Vertices)", mesh.vertexCount.ToString("N0"));
                 EditorGUILayout.LabelField("Trojuholniky", (mesh.triangles.Length / 3).ToString("N0"));
                 EditorGUILayout.LabelField("Uzly grafu", generator.LastNodeCount.ToString("N0"));
                 EditorGUILayout.LabelField("L-system dlzka", generator.LastLSystemLength.ToString("N0") + " znakov");
 
-                if (generator.UseStrands)
-                {
-                    EditorGUILayout.LabelField("Pocet strandov", generator.LastStrandCount.ToString("N0"));
-                }
-
                 if (generator.RootNode != null)
                 {
-                    int leafCount = CountLeaves(generator.RootNode);
-                    int maxDepth = GetMaxDepth(generator.RootNode);
-                    EditorGUILayout.LabelField("Koncove vetvy", leafCount.ToString());
-                    EditorGUILayout.LabelField("Max hlbka", maxDepth.ToString());
+                    EditorGUILayout.LabelField("Koncove vetvy", CountLeaves(generator.RootNode).ToString());
+                    EditorGUILayout.LabelField("Max hlbka", GetMaxDepth(generator.RootNode).ToString());
                 }
             }
             else
@@ -134,8 +149,7 @@ public class TreeGeneratorEditor : Editor
     {
         if (node.IsLeaf) return 1;
         int count = 0;
-        foreach (var child in node.Children)
-            count += CountLeaves(child);
+        foreach (var child in node.Children) count += CountLeaves(child);
         return count;
     }
 
@@ -143,18 +157,16 @@ public class TreeGeneratorEditor : Editor
     {
         if (node.IsLeaf) return node.Depth;
         int max = node.Depth;
-        foreach (var child in node.Children)
-            max = Mathf.Max(max, GetMaxDepth(child));
+        foreach (var child in node.Children) max = Mathf.Max(max, GetMaxDepth(child));
         return max;
     }
 
-    // --- LOGIKA PRE EXPORT DO OBJ S OPRAVENOU KULTUROU (BODKY NAMIESTO CIAROK) ---
     private void ExportTreeToObj(TreeGenerator generator)
     {
         MeshFilter mf = generator.GetComponent<MeshFilter>();
         if (mf == null || mf.sharedMesh == null)
         {
-            EditorUtility.DisplayDialog("Chyba", "Najprv vygeneruj strom, az potom ho mozes exportovat!", "OK");
+            EditorUtility.DisplayDialog("Chyba", "Najprv vygeneruj strom!", "OK");
             return;
         }
 
@@ -163,38 +175,26 @@ public class TreeGeneratorEditor : Editor
 
         Mesh mesh = mf.sharedMesh;
         StringBuilder sb = new StringBuilder();
-        
+        CultureInfo ci = CultureInfo.InvariantCulture;
+
         sb.AppendLine("# Generovane pomocou Procedural Tree Generator");
         sb.AppendLine("o ProceduralTree");
 
-        // OPRAVA: Povieme C#, aby vzdy pouzival americky format cisel (s bodkami)
-        CultureInfo ci = CultureInfo.InvariantCulture;
+        foreach (Vector3 v in mesh.vertices) sb.AppendLine(string.Format(ci, "v {0:F6} {1:F6} {2:F6}", -v.x, v.y, v.z));
+        foreach (Vector2 uv in mesh.uv) sb.AppendLine(string.Format(ci, "vt {0:F6} {1:F6}", uv.x, uv.y));
+        foreach (Vector3 n in mesh.normals) sb.AppendLine(string.Format(ci, "vn {0:F6} {1:F6} {2:F6}", -n.x, n.y, n.z));
 
-        // 1. Zapiseme vrcholy (Prevod z Lavo-tociveho do Pravo-tociveho systemu)
-        foreach (Vector3 v in mesh.vertices)
-            sb.AppendLine(string.Format(ci, "v {0:F6} {1:F6} {2:F6}", -v.x, v.y, v.z));
-
-        // 2. Zapiseme UV mapu
-        foreach (Vector2 uv in mesh.uv)
-            sb.AppendLine(string.Format(ci, "vt {0:F6} {1:F6}", uv.x, uv.y));
-
-        // 3. Zapiseme normaly
-        foreach (Vector3 n in mesh.normals)
-            sb.AppendLine(string.Format(ci, "vn {0:F6} {1:F6} {2:F6}", -n.x, n.y, n.z));
-
-        // 4. Zapiseme trojuholniky (plochy) - tie su bez desatinnych miest, takze su bezpecne
         for (int i = 0; i < mesh.triangles.Length; i += 3)
         {
             int t1 = mesh.triangles[i] + 1;
             int t2 = mesh.triangles[i + 1] + 1;
             int t3 = mesh.triangles[i + 2] + 1;
-            
             sb.AppendLine($"f {t3}/{t3}/{t3} {t2}/{t2}/{t2} {t1}/{t1}/{t1}");
         }
 
         File.WriteAllText(path, sb.ToString());
-        Debug.Log($"[Export Uspesny] Strom bol ulozeny do: {path}");
-        EditorUtility.DisplayDialog("Uspesny Export", "Strom bol uspesne exportovany do OBJ formatu!\nTeraz ho mozes otvorit v Blenderi alebo 3D Vieweri.", "Super");
+        Debug.Log($"[Export] Strom ulozeny do: {path}");
+        EditorUtility.DisplayDialog("Uspesny Export", "Strom bol uspesne exportovany do OBJ formatu!\nOtvor ho v Blenderi alebo 3D Vieweri.", "Super");
     }
 }
 #endif
