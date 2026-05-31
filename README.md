@@ -1,144 +1,75 @@
-# Procedurálne Generovanie Modelov Stromov
-## Bakalárska práca — Unity C# implementácia
+# Procedural Generation of Tree Models
 
-### Prehľad projektu
+This repository contains the source code for a bachelor thesis project focused on procedural generation of 3D tree models in Unity.
 
-Tento projekt implementuje procedurálny generátor stromov v Unity pomocou L-systémov
-(Lindenmayerových systémov). Inšpirovaný prácou "Interactive Invigoration: Volumetric
-Modeling of Trees with Strands" (Li et al., 2024), prispôsobený na bakalársku úroveň.
+The system generates tree structures using stochastic L-systems, interprets them in 3D using turtle graphics, computes branch radii using a pipe model, creates a polygonal mesh, and supports procedural bark and leaf textures. It also includes basic interactive editing operations such as local growth, pruning, and adventitious bud creation.
 
----
+## Features
 
-### Štruktúra projektu
+- Procedural generation of tree skeletons using stochastic L-systems
+- 3D turtle interpretation of generated strings
+- Skeletal graph representation of the tree structure
+- Branch radius computation using a pipe model
+- Radius smoothing for more natural transitions between branches
+- Mesh generation from cylindrical branch segments
+- Adaptive radial segment count based on branch thickness
+- Procedural bark and leaf texture generation
+- Leaf generation at terminal nodes
+- Interactive editing:
+  - local growth using vigor
+  - pruning of selected subtrees
+  - creation of adventitious buds
+- Export of generated trees to the `.OBJ` format
+- Custom Unity inspector for easier parameter editing
 
-```
-ProceduralTree/
-├── Scripts/
-│   ├── Core/
-│   │   ├── LSystem.cs            # L-systém prepísavací engine
-│   │   ├── TurtleInterpreter.cs  # 3D turtle → TreeSkeleton
-│   │   └── MeshBuilder.cs        # TreeSkeleton → Unity Mesh
-│   ├── Data/
-│   │   ├── TreePreset.cs         # ScriptableObject s parametrami
-│   │   └── TreeSkeleton.cs       # Dátové štruktúry kostry
-│   ├── Editor/
-│   │   └── TreeGeneratorEditor.cs # Vlastný Unity inspektor
-│   ├── Utils/
-│   │   └── TreeSpecies.cs        # Predefinované druhy stromov
-│   └── TreeGenerator.cs          # Hlavný MonoBehaviour komponent
-└── README.md
-```
+## Repository contents
 
----
+This repository mainly contains the implementation source files. Large Unity project files and generated data are not included in the repository in order to keep its size reasonable.
 
-### Inštalácia (krok za krokom)
+The complete Unity project, including all files required to run the scene, is included in the electronic attachment submitted together with the thesis.
 
-1. **Vytvorte nový Unity projekt** (Unity 2021.3 LTS alebo novší)
+## Requirements
 
-2. **Skopírujte priečinok `Scripts/`** do vášho Unity projektu:
-   ```
-   Assets/ProceduralTree/Scripts/
-   ```
+The project was implemented in Unity using C#.
 
-3. **Vytvorte scénu:**
-   - Vytvorte prázdny `GameObject` v scéne
-   - Pomenujte ho "Tree"
-   - Pridajte komponent `TreeGenerator` (Add Component → Procedural Tree → Tree Generator)
+To run the complete project, use the Unity project included in the electronic attachment of the thesis. The GitHub repository is intended mainly for reviewing the implementation source code.
 
-4. **Vytvorte TreePreset:**
-   - V Project okne: pravý klik → Create → Procedural Tree → Tree Preset
-   - Pomenujte preset (napr. "Oak_Preset")
-   - Priraďte preset do TreeGenerator komponentu
+## Basic usage
 
-5. **Generujte strom:**
-   - V inspektore kliknite tlačidlo **"Generovať strom"**
-   - Upravte parametre a kliknite znova pre rôzne tvary
+1. Open the complete Unity project from the electronic attachment.
+2. Open the provided sample scene.
+3. Select the object containing the `TreeGenerator` component.
+4. Choose a tree preset or manually adjust the generation parameters.
+5. Generate or regenerate the tree using the controls in the custom inspector.
+6. Optionally enter Play Mode to use interactive editing operations.
+7. Export the generated model to `.OBJ` if needed.
 
----
+## Main controls
 
-### Podporované L-systém symboly
+The main parameters can be edited in the Unity inspector. They include, for example:
 
-| Symbol | Akcia |
-|--------|-------|
-| `F`    | Posuň dopredu a nakresli segment vetvy |
-| `f`    | Posuň dopredu bez kreslenia |
-| `+`    | Otočenie vľavo (yaw) |
-| `-`    | Otočenie vpravo (yaw) |
-| `&`    | Náklon nadol (pitch) |
-| `^`    | Náklon nahor (pitch) |
-| `\`    | Rotácia vľavo (roll) |
-| `/`    | Rotácia vpravo (roll) |
-| `[`    | Uloženie stavu (začiatok vetvy) |
-| `]`    | Obnovenie stavu (koniec vetvy) |
+- number of L-system iterations
+- branch angle
+- segment length
+- length decay
+- trunk radius
+- leaf density
+- gravitropism
+- phototropism
+- random seed
 
----
+Changing these parameters affects the generated tree shape, branch structure, leaf distribution, and overall visual appearance.
 
-### Predefinované druhy stromov
+## Interactive editing
 
-Použitie v kóde:
-```csharp
-TreeSpecies.ApplySpecies(preset, TreeSpeciesType.Oak);
-```
+Interactive editing is performed in Play Mode. Depending on the selected mode, clicking on a branch can:
 
-| Druh | Opis |
-|------|------|
-| `SimpleTree` | Jednoduchý strom pre testovanie |
-| `Oak` | Dub — široká koruna, nepravidelné vetvenie |
-| `Pine` | Borovica — kužeľovitý tvar, pravidelné poschodia |
-| `Willow` | Vŕba — prevísajúce vetvy |
-| `Birch` | Breza — štíhla, jemné vetvenie |
-| `Bush` | Ker — nízky, široký |
-| `Palm` | Palma — rovný kmeň, listy na vrchu |
+- add growth vigor to the selected part of the tree,
+- remove the selected subtree,
+- create adventitious buds near the selected branch.
 
----
+After an edit, the skeletal graph is updated and the branch radii, mesh, leaves, collider data, and triangle-to-node mapping are recalculated.
 
-### Architektúra systému
+## Export
 
-```
-TreePreset (dáta)
-    ↓
-LSystem (prepísanie reťazca)
-    ↓
-TurtleInterpreter (reťazec → kostra stromu)
-    ↓
-TreeSkeleton (dátová štruktúra)
-    ↓
-MeshBuilder (kostra → Unity Mesh)
-    ↓
-TreeGenerator (priradenie do scény)
-```
-
----
-
-### Kľúčové parametre
-
-**Kmeň:**
-- `initialLength` — počiatočná dĺžka segmentu
-- `initialRadius` — počiatočný polomer kmeňa
-- `lengthReduction` — zmenšenie dĺžky pri vetvení
-- `radiusReduction` — zmenšenie polomeru pri vetvení
-
-**Vetvenie:**
-- `branchAngle` — základný uhol vetvenia
-- `angleVariation` — náhodná variácia uhla
-- `iterations` — počet L-systém iterácií (viac = detailnejší strom)
-
-**Fyzika:**
-- `gravity` — sila gravitácie na vetvy
-- `phototropism` — tendencia rásť smerom nahor
-
-**Kvalita:**
-- `trunkRadialSegments` — počet segmentov pre kmeň
-- `heightSegments` — plynulosť zakrivenia vetiev
-
----
-
-### Ďalší vývoj (možné rozšírenia pre prácu)
-
-- [ ] Priestorová kolonizácia (space colonization) ako alternatívny algoritmus
-- [ ] LOD systém s Unity LODGroup
-- [ ] Animácia vetra pomocou vertex shaderu
-- [ ] Textúrovanie kôry a listov
-- [ ] Export do OBJ/FBX formátu
-- [ ] Porovnanie kvality L-systémov vs. space colonization
-- [ ] Nekruhové prierezy vetiev (inšpirované Li et al.)
+Generated trees can be exported to the `.OBJ` format using the export option in the editor interface. This allows the resulting model to be used in other 3D tools or scenes.
