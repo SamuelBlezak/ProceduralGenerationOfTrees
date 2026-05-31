@@ -19,7 +19,6 @@ MonoBehaviour:
   BranchAngle: 30
   SegmentLength: 0.8
   TrunkRadius: 0.55
-  RadiusDecay: 0.78
   LengthDecay: 0.8
   AngleVariation: 8
   DivergenceAngle: 137.5

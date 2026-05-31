@@ -14,12 +14,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TreeSpeciesPreset
   SpeciesName: "V\u0155ba"
   Description: "Strom s dlh\xFDmi prev\xEDsaj\xFAcimi vetvami"
-  BaseSpecies: 2
+  BaseSpecies: 1
   Iterations: 5
   BranchAngle: 18
   SegmentLength: 1.5
   TrunkRadius: 0.42
-  RadiusDecay: 0.82
   LengthDecay: 0.88
   AngleVariation: 5
   DivergenceAngle: 90
