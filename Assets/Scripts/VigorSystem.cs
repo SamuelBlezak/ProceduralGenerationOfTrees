@@ -1,11 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// Vylepšený vigor model (Borchert-Honda + Sekundárny rast).
-/// Vigor teraz nielen pridáva nové uzly, ale priamo zväčšuje priemer
-/// existujúcich vetiev a kmeňa smerom nadol ku koreňu.
-/// </summary>
 public static class VigorSystem
 {
     private const float ThicknessFactor = 0.015f;
@@ -109,9 +104,7 @@ public static class VigorSystem
             int newBranches = Mathf.Clamp(Mathf.FloorToInt(node.Vigor / threshold), 1, 2);
             float vigorPerBranch = node.Vigor / newBranches;
 
-            // ZMENA: Zistíme, koľko detí už uzol má, aby sme vedeli, ako veľmi to máme otočiť (Fylotaxia)
             int existingChildrenCount = node.Children.Count;
-            // ZMENA: Ak rastú 2 nové vetvy naraz, rozdelíme 360° na 2 (čiže budú 180° od seba)
             float angleStep = 360f / newBranches;
 
             for (int i = 0; i < newBranches; i++)
@@ -120,23 +113,16 @@ public static class VigorSystem
                 if (node.Parent != null)
                     parentDir = (node.Position - node.Parent.Position).normalized;
 
-                // ==========================================
-                // NOVÁ MATEMATIKA PRE ROZLOŽENIE DO PRIESTORU
-                // ==========================================
-                // Zlatý uhol odsadí nové vetvy od tých starých a angleStep garantuje rovnomerne rozloženie tých nových
                 float divergence = (137.5f * existingChildrenCount) + (angleStep * i) + (float)(rng.NextDouble() * 20f - 10f);
                 float pitchAngle = branchAngle + (float)(rng.NextDouble() * 10f - 5f);
 
-                // Nájdenie bezpečnej kolmice pre pitch (naklonenie)
                 Vector3 ortho = Vector3.Cross(parentDir, Vector3.up);
                 if (ortho.sqrMagnitude < 0.001f)
                     ortho = Vector3.Cross(parentDir, Vector3.right);
                 ortho.Normalize();
 
-                // Najprv odchýlime vetvu od kmeňa (pitch) a potom ju otočíme dookola kmeňa (yaw/divergence)
                 Quaternion rotation = Quaternion.AngleAxis(divergence, parentDir) * Quaternion.AngleAxis(pitchAngle, ortho);
                 Vector3 newDir = (rotation * parentDir).normalized;
-                // ==========================================
 
                 float length = branchLength * Mathf.Sqrt(vigorPerBranch);
                 Vector3 newPos = node.Position + newDir * length;

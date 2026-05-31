@@ -1,33 +1,20 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// 3D Turtle interpreter — premeni L-system retazec na skeletalny graf stromu
-/// </summary>
 public class TurtleInterpreter
 {
-    public float Angle = 25f; /// zakladny uhol rotacie pri symboloch + - & ^ \ /
-    public float StepLength = 1f; /// zakladná dlzka jedného kroku pri symbole F
-    public float InitialRadius = 0.5f; /// pociatocny polomer kmena pri koreni
-    public float RadiusDecay = 0.75f; /// postupne zmensovanie hrubky
-    public float LengthDecay = 0.85f; /// pri vetveni sa dlzka dalsich vetiev zmensuje
-    public float AngleVariation = 5f; /// nahodna odchylka uhla (prirodzenejsi vzhlad)
-    public float DivergenceAngle = 137.5f; /// vyuzitie pri divergencii vetiev (aby sa vetvy neprekryvali)
+    public float Angle = 25f;
+    public float StepLength = 1f;
+    public float InitialRadius = 0.5f;
+    public float LengthDecay = 0.85f;
+    public float AngleVariation = 5f;
+    public float DivergenceAngle = 137.5f;
 
-    public float Gravitropism = 0.08f; /// sila gravitropizmu - ako velmi sa vetvy ohybaju nadol
-    public float Phototropism = 0.05f; /// sila fototropizmu — ako velmi sa vetvy tahaju nahor k svetlu
+    public float Gravitropism = 0.08f;
+    public float Phototropism = 0.05f;
 
-    public int Seed = 42; /// nejaky seed
+    public int Seed = 42;
 
-    /// <summary>
-    /// aktualny stav "korytnacky" pocas interpretacie
-    /// uchovava:
-    /// - poziciu
-    /// - orientaciu
-    /// - aktualnu dlzku kroku
-    /// - hlbku vetvenia
-    /// - aktualny uzol stromu
-    /// </summary>
     private struct TurtleState
     {
         public Vector3 Position;
@@ -37,18 +24,12 @@ public class TurtleInterpreter
         public BranchNode CurrentNode;
     }
 
-    /// <summary>
-    /// Interpretuje L-system reťazec a vytvorí stromovú kostru:
-    /// - root = koreň stromu
-    /// - segments = všetky segmenty vetiev medzi uzlami
-    /// </summary>
     public (BranchNode root, List<BranchSegment> segments) Interpret(string lSystemString)
     {
-        System.Random rng = new System.Random(Seed); /// nahodny generator so zadanym seedom
-        BranchNode root = new BranchNode(Vector3.zero, Quaternion.identity, InitialRadius, 0); /// koren stromu v strede sveta bez rotacie
+        System.Random rng = new System.Random(Seed);
+        BranchNode root = new BranchNode(Vector3.zero, Quaternion.identity, InitialRadius, 0);
         root.Index = 0;
 
-        /// pociatocny stav turtle
         TurtleState state = new TurtleState
         {
             Position = Vector3.zero,
@@ -58,35 +39,30 @@ public class TurtleInterpreter
             CurrentNode = root
         };
 
-        Stack<TurtleState> stateStack = new Stack<TurtleState>(); /// zasobnik stavov pre vetvenie ([ a ])
-        List<BranchSegment> segments = new List<BranchSegment>(); /// zoznam všetkych segmentov vetiev
-        int nodeIndex = 1;  /// cislovanie uzlov
-        int branchCounter = 0; /// pocitanie vetiev pre divergence angle
+        Stack<TurtleState> stateStack = new Stack<TurtleState>();
+        List<BranchSegment> segments = new List<BranchSegment>();
+        int nodeIndex = 1;
+        int branchCounter = 0;
 
-        /// prechadzanie znak po znaku cez l-sys retazec
         foreach (char c in lSystemString)
         {
             switch (c)
             {
                 case 'F':
                     {
-                        /// GRAVITROPIZMUS = vetvy sa jemne ohybaju nadol
-                        /// pouziva sa len mimo kmena (Depth > 0)
                         if (Gravitropism > 0f && state.Depth > 0)
                         {
-                            Vector3 currentUp = state.Orientation * Vector3.up; /// aktualny smer "hore" podla orientacie vetvy
-                            float horizontality = 1f - Mathf.Abs(Vector3.Dot(currentUp, Vector3.up)); /// kontrola ako velmi je vetva horizontalna (0 - vert, 1 - horiz)
-                            float gravAngle = Gravitropism * horizontality * (1f + state.Depth * 0.3f); /// uhol ohybu (gravito * horizontalita * hlbka vetvy)
+                            Vector3 currentUp = state.Orientation * Vector3.up;
+                            float horizontality = 1f - Mathf.Abs(Vector3.Dot(currentUp, Vector3.up));
+                            float gravAngle = Gravitropism * horizontality * (1f + state.Depth * 0.3f);
 
-                            Vector3 gravAxis = Vector3.Cross(currentUp, Vector3.down); /// osa rotacie pre ohyb smerom nadol
-                            if (gravAxis.sqrMagnitude > 0.001f) /// ak je os dostatocne velka, aplikuj ohyb
+                            Vector3 gravAxis = Vector3.Cross(currentUp, Vector3.down);
+                            if (gravAxis.sqrMagnitude > 0.001f)
                             {
                                 state.Orientation = Quaternion.AngleAxis(gravAngle * Mathf.Rad2Deg, gravAxis.normalized) * state.Orientation;
                             }
                         }
 
-                        /// FOTOTROPIZMUS = vetvy sa tahaju nahor za svetlom
-                        /// tiez len mimo kmena (Depth > 0)
                         if (Phototropism > 0f && state.Depth > 0)
                         {
                             Vector3 currentDir = state.Orientation * Vector3.up;
@@ -149,8 +125,15 @@ public class TurtleInterpreter
         }
         float sumSquared = 0f;
         foreach (var child in node.Children) sumSquared += RecalculateRadii(child);
-        node.Radius = Mathf.Sqrt(sumSquared);
-        node.Radius = Mathf.Min(node.Radius, InitialRadius);
+
+        float pipeRadius = Mathf.Sqrt(sumSquared);
+
+        if (node.Children.Count == 1)
+        {
+            pipeRadius *= 1.05f;
+        }
+
+        node.Radius = Mathf.Min(pipeRadius, InitialRadius);
         return node.Radius * node.Radius;
     }
 

@@ -19,7 +19,6 @@ public class TreeGenerator : MonoBehaviour
     [Range(10f, 60f)] public float BranchAngle = 25f;
     [Range(0.1f, 3f)] public float SegmentLength = 1.0f;
     [Range(0.05f, 2f)] public float TrunkRadius = 0.3f;
-    [Range(0.5f, 0.95f)] public float RadiusDecay = 0.75f;
     [Range(0.5f, 0.95f)] public float LengthDecay = 0.85f;
     [Range(0f, 20f)] public float AngleVariation = 5f;
     [Range(30f, 180f)] public float DivergenceAngle = 137.5f;
@@ -101,7 +100,6 @@ public class TreeGenerator : MonoBehaviour
             Angle = BranchAngle,
             StepLength = SegmentLength,
             InitialRadius = TrunkRadius,
-            RadiusDecay = RadiusDecay,
             LengthDecay = LengthDecay,
             AngleVariation = AngleVariation,
             DivergenceAngle = DivergenceAngle,
@@ -117,7 +115,7 @@ public class TreeGenerator : MonoBehaviour
         Mesh mesh = BranchMeshGenerator.GenerateTreeMesh(_rootNode, RadialSegments, MaxMeshDepth, SmoothNormals);
         _meshFilter.sharedMesh = mesh;
 
-        GenerateLeafMesh(); // Generovanie lístia
+        GenerateLeafMesh();
 
         sw.Stop();
         LastGenerationTimeMs = (float)sw.Elapsed.TotalMilliseconds;
@@ -128,7 +126,6 @@ public class TreeGenerator : MonoBehaviour
     {
         if (_rootNode == null) return;
 
-        // Uvoľnenie starého meshu (prevencia memory leaku)
         if (_meshFilter.sharedMesh != null)
         {
             if (Application.isPlaying) Destroy(_meshFilter.sharedMesh);
@@ -142,15 +139,10 @@ public class TreeGenerator : MonoBehaviour
         GenerateLeafMesh();
     }
 
-    /// <summary>
-    /// Pregeneruje materiál kôry s aktuálnymi parametrami.
-    /// Volané z editora alebo pri zmene vizuálnych parametrov.
-    /// </summary>
     public void RegenerateBarkMaterial()
     {
         if (_meshRenderer == null) return;
 
-        // Uvoľni starý materiál
         if (_meshRenderer.sharedMaterial != null)
         {
             if (Application.isPlaying) Destroy(_meshRenderer.sharedMaterial);
@@ -164,7 +156,6 @@ public class TreeGenerator : MonoBehaviour
             _meshRenderer.sharedMaterial = CreateDefaultMaterial(BarkColor, "Bark");
     }
 
-    // === GENERÁTOR LÍSTIA ===
 
     private void GenerateLeafMesh()
     {
@@ -182,18 +173,14 @@ public class TreeGenerator : MonoBehaviour
 
         foreach (var leaf in leaves)
         {
-            // Smer rastu vetvy (pre orientáciu listov)
             Vector3 branchDir = Vector3.up;
             if (leaf.Parent != null)
                 branchDir = (leaf.Position - leaf.Parent.Position).normalized;
 
-            // Cluster listov okolo koncového uzla
             for (int i = 0; i < LeavesPerNode; i++)
             {
-                // Náhodná veľkosť (70% - 130% základnej veľkosti)
                 float sizeVariation = LeafSize * (0.7f + (float)rnd.NextDouble() * 0.6f);
 
-                // Náhodný offset od uzla (listy nie sú presne na špičke)
                 float offsetDist = sizeVariation * 0.3f * (float)rnd.NextDouble();
                 Vector3 randomOffset = new Vector3(
                     (float)(rnd.NextDouble() * 2 - 1),
@@ -203,10 +190,8 @@ public class TreeGenerator : MonoBehaviour
 
                 Vector3 leafPos = leaf.Position + randomOffset;
 
-                // Náhodná orientácia — listy sa natáčajú k svetlu (hore)
-                // ale zachovávajú väzbu na smer vetvy
                 float yaw = (float)rnd.NextDouble() * 360f;
-                float pitch = 20f + (float)rnd.NextDouble() * 40f; // 20-60° od vertikály
+                float pitch = 20f + (float)rnd.NextDouble() * 40f;
                 float roll = (float)rnd.NextDouble() * 20f - 10f;
 
                 Quaternion rot = Quaternion.LookRotation(branchDir, Vector3.up)
@@ -215,13 +200,11 @@ public class TreeGenerator : MonoBehaviour
                 Vector3 right = rot * Vector3.right * sizeVariation * 0.5f;
                 Vector3 up = rot * Vector3.up * sizeVariation;
 
-                // 4 rohové body quadu
                 Vector3 p0 = leafPos - right;
                 Vector3 p1 = leafPos + right;
                 Vector3 p2 = leafPos - right + up;
                 Vector3 p3 = leafPos + right + up;
 
-                // Jeden quad stačí — materiál má Cull Off (obojstranný)
                 int idx = verts.Count;
                 verts.Add(p0); verts.Add(p1); verts.Add(p2); verts.Add(p3);
                 uvs.Add(new Vector2(0, 0)); uvs.Add(new Vector2(1, 0));
@@ -253,7 +236,6 @@ public class TreeGenerator : MonoBehaviour
         if (node.IsLeaf) list.Add(node);
         foreach (var child in node.Children) CollectLeaves(child, list);
     }
-    // ========================
 
     private void CleanupMesh()
     {
@@ -277,15 +259,29 @@ public class TreeGenerator : MonoBehaviour
         switch (species)
         {
             case TreeSpecies.Deciduous: return new Dictionary<char, List<LSystemRule>> { { 'F', new List<LSystemRule> { new LSystemRule("FF/[&+F-F-F]\\[-F+F+F]", 0.33f), new LSystemRule("FF\\[&-F+F]//[^+F-F]", 0.33f), new LSystemRule("FF/[^F-F+F]\\[&F+F-F]", 0.34f) } } };
-            case TreeSpecies.Conifer: return new Dictionary<char, List<LSystemRule>> { { 'F', new List<LSystemRule> { new LSystemRule("FF", 1f) } }, { 'A', new List<LSystemRule> { new LSystemRule("F[&+A]/F[&-A]//+A", 0.5f), new LSystemRule("F[&A]\\F[&+A]//-A", 0.5f) } } };
-            case TreeSpecies.Willow: return new Dictionary<char, List<LSystemRule>> { { 'F', new List<LSystemRule> { new LSystemRule("FF", 1f) } }, { 'A', new List<LSystemRule> { new LSystemRule("F[&&&+A]/F[&&&-A]\\F[&&A]", 0.5f), new LSystemRule("F[&&+A]//F[&&&-A]\\[&&A]", 0.5f) } } };
-            case TreeSpecies.Bush: return new Dictionary<char, List<LSystemRule>> { { 'F', new List<LSystemRule> { new LSystemRule("F/[&+F]\\F[&-F]/[^F]", 0.4f), new LSystemRule("F\\[&+F]F/[^-F]", 0.3f), new LSystemRule("F/[^-F]\\F[&+F]", 0.3f) } } };
-            case TreeSpecies.Palm: return new Dictionary<char, List<LSystemRule>> { { 'F', new List<LSystemRule> { new LSystemRule("FF", 1f) } }, { 'A', new List<LSystemRule> { new LSystemRule("F[&&+A]/[&&-A]//[&&&+A]///[&&&-A]", 0.5f), new LSystemRule("FF/[&&+A]//[&&-A]///[&&&A]", 0.5f) } } };
+
+            case TreeSpecies.Willow: return new Dictionary<char, List<LSystemRule>>
+            {
+                { 'T', new List<LSystemRule>
+                    {
+                        new LSystemRule("FF[\\B][/B]FF[\\\\\\B][///B]FFT", 0.5f),
+                        new LSystemRule("FF[/B][\\B]FF[///B][\\\\\\B]FFT", 0.5f)
+                    }
+                },
+                { 'B', new List<LSystemRule>
+                    {
+                        new LSystemRule("F&F[+&FB]&F[-&FB]&F&B", 0.4f),
+                        new LSystemRule("F&F[-&FB]&F[+&FB]&F&B", 0.4f),
+                        new LSystemRule("F&F&F&F&B", 0.2f)
+                    }
+                }
+            };
+
             default: return new Dictionary<char, List<LSystemRule>> { { 'F', new List<LSystemRule> { new LSystemRule("F[+F]F[-F]F", 1f) } } };
         }
     }
 
-    private string GetAxiomForSpecies(TreeSpecies species) { return (species == TreeSpecies.Conifer || species == TreeSpecies.Willow || species == TreeSpecies.Palm) ? "A" : "F"; }
+    private string GetAxiomForSpecies(TreeSpecies species) { return (species == TreeSpecies.Willow) ? "T" : "F"; }
 
     void OnDrawGizmos()
     {
@@ -319,7 +315,6 @@ public class TreeGenerator : MonoBehaviour
         }
         else
         {
-            // Pre starý (Standard) render pipeline
             mat.color = color;
             mat.SetFloat("_Glossiness", 0.0f);
         }
@@ -343,8 +338,8 @@ public class TreeGenerator : MonoBehaviour
     {
         int hash = Iterations.GetHashCode() ^ Seed ^ (int)Species;
         hash ^= BranchAngle.GetHashCode() ^ SegmentLength.GetHashCode();
-        hash ^= TrunkRadius.GetHashCode() ^ RadiusDecay.GetHashCode();
-        hash ^= LengthDecay.GetHashCode() ^ AngleVariation.GetHashCode();
+        hash ^= TrunkRadius.GetHashCode() ^ LengthDecay.GetHashCode();
+        hash ^= AngleVariation.GetHashCode();
         hash ^= DivergenceAngle.GetHashCode() ^ Gravitropism.GetHashCode();
         hash ^= Phototropism.GetHashCode() ^ (EnableLeaves ? 1 : 0);
         hash ^= LeafSize.GetHashCode() ^ RadialSegments ^ (LeavesPerNode << 16);
@@ -352,4 +347,4 @@ public class TreeGenerator : MonoBehaviour
         return hash;
     }
 }
-public enum TreeSpecies { Deciduous, Conifer, Willow, Bush, Palm }
+public enum TreeSpecies { Deciduous, Willow }

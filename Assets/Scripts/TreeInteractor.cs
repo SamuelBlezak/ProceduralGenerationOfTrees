@@ -2,15 +2,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-/// <summary>
-/// Interaktívny editor stromu — nový Input System.
-/// 
-/// Ovládanie (Play Mode):
-///   - Ľavý klik na vetvu: akcia podľa režimu
-///   - Podržanie: viac vigoru
-///   - Shift + scroll: zmena sily vigoru
-///   - 1/2/3: prepnutie režimu (Rast / Orezanie / Puky)
-/// </summary>
 [RequireComponent(typeof(TreeGenerator))]
 public class TreeInteractor : MonoBehaviour
 {
@@ -34,7 +25,6 @@ public class TreeInteractor : MonoBehaviour
 
     public bool ShowVigorHeatmap = true;
 
-    // Interne premenne
     private TreeGenerator _generator;
     private MeshCollider _meshCollider;
     private Camera _mainCamera;
@@ -83,10 +73,8 @@ public class TreeInteractor : MonoBehaviour
         for (int i = 0; i < tris.Length; i += 3)
         {
             int triIndex = i / 3;
-            // Vypočítame stred trojuholníka (v lokálnom priestore)
             Vector3 center = (verts[tris[i]] + verts[tris[i + 1]] + verts[tris[i + 2]]) / 3f;
 
-            // Nájdeme, ku ktorej vetve (segmentu) tento trojuholník patrí
             BranchNode closest = FindClosestNode(center, allNodes);
             if (closest != null)
                 _triangleToNode[triIndex] = closest;
@@ -99,7 +87,6 @@ public class TreeInteractor : MonoBehaviour
         var kb = Keyboard.current;
         if (mouse == null || _mainCamera == null) return;
 
-        // Raycast pod kurzorom
         Vector2 mousePos = mouse.position.ReadValue();
         Ray ray = _mainCamera.ScreenPointToRay(mousePos);
         RaycastHit hit;
@@ -121,7 +108,6 @@ public class TreeInteractor : MonoBehaviour
             _hoveredNode = null;
         }
 
-        // Ľavý klik — začiatok akcie
         if (mouse.leftButton.wasPressedThisFrame && _hoveredNode != null)
         {
             _clickStartTime = Time.time;
@@ -129,7 +115,6 @@ public class TreeInteractor : MonoBehaviour
             _selectedNode = _hoveredNode;
         }
 
-        // Ľavý klik uvoľnený — vykonaj akciu
         if (mouse.leftButton.wasReleasedThisFrame && _isClicking && _selectedNode != null)
         {
             float duration = Time.time - _clickStartTime;
@@ -146,7 +131,6 @@ public class TreeInteractor : MonoBehaviour
             _selectedNode = null;
         }
 
-        // Shift + Scroll — zmena sily vigoru
         if (kb != null && kb.leftShiftKey.isPressed)
         {
             float scroll = mouse.scroll.y.ReadValue();
@@ -156,7 +140,6 @@ public class TreeInteractor : MonoBehaviour
             }
         }
 
-        // Klávesové skratky
         if (kb != null)
         {
             if (kb.digit1Key.wasPressedThisFrame) Mode = InteractionMode.Invigorate;
@@ -165,7 +148,6 @@ public class TreeInteractor : MonoBehaviour
         }
     }
 
-    // === Akcie ===
 
     private void PerformInvigoration(BranchNode node, float vigor)
     {
@@ -214,22 +196,15 @@ public class TreeInteractor : MonoBehaviour
 
     private void RegenerateMesh()
     {
-        // Delegujeme na TreeGenerator, ktorý robí:
-        // 1. RadiusSmoothing (hladké prechody hrúbok)
-        // 2. Mesh generovanie
-        // 3. Regeneráciu lístia
         _generator.RebuildMeshOnly();
 
-        // Aktualizujeme collider pre raycast
         MeshFilter mf = GetComponent<MeshFilter>();
         if (_meshCollider != null && mf != null && mf.sharedMesh != null)
             _meshCollider.sharedMesh = mf.sharedMesh;
 
-        // Aktualizujeme mapu trojuholníkov pre novú geometriu
         BuildTriangleMap();
     }
 
-    // === Gizmos ===
 
     void OnDrawGizmos()
     {
@@ -264,14 +239,11 @@ public class TreeInteractor : MonoBehaviour
             DrawVigorHeatmap(child);
     }
 
-    // === Pomocné (Opravená matematika segmentov) ===
-
     private BranchNode FindClosestNodeToWorldPoint(Vector3 worldPoint, BranchNode root)
     {
         List<BranchNode> allNodes = new List<BranchNode>();
         CollectAllNodes(root, allNodes);
 
-        // Prevedieme world-space point z myši do lokálneho priestoru stromu
         Vector3 localPoint = transform.InverseTransformPoint(worldPoint);
         return FindClosestNode(localPoint, allNodes);
     }
@@ -285,13 +257,11 @@ public class TreeInteractor : MonoBehaviour
         {
             if (node.Parent == null)
             {
-                // Ak je to úplný koreň, meriame len priamo k bodu
                 float rootDistSq = (node.Position - localPoint).sqrMagnitude;
                 if (rootDistSq < minDistSq) { minDistSq = rootDistSq; closest = node; }
                 continue;
             }
 
-            // Body úsečky (od rodiča k dieťaťu)
             Vector3 a = node.Parent.Position;
             Vector3 b = node.Position;
             Vector3 ab = b - a;
@@ -301,18 +271,15 @@ public class TreeInteractor : MonoBehaviour
 
             if (lengthSq < 0.0001f)
             {
-                // Ak je vetva príliš krátka (takmer bod)
                 distSq = (localPoint - a).sqrMagnitude;
             }
             else
             {
-                // Nájdeme najbližší bod priamo na úsečke (čiara vetvy)
                 float t = Mathf.Clamp01(Vector3.Dot(localPoint - a, ab) / lengthSq);
                 Vector3 projectedPoint = a + t * ab;
                 distSq = (localPoint - projectedPoint).sqrMagnitude;
             }
 
-            // Aktualizujeme ak sme bližšie
             if (distSq < minDistSq)
             {
                 minDistSq = distSq;
@@ -328,7 +295,6 @@ public class TreeInteractor : MonoBehaviour
         foreach (var child in node.Children) CollectAllNodes(child, list);
     }
 
-    // === Runtime UI ===
 
     void OnGUI()
     {

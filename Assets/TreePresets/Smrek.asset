@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 310ce752d6b78a945ae5aa30ea0183b0, type: 3}
+  m_Name: Smrek
+  m_EditorClassIdentifier: Assembly-CSharp::TreeSpeciesPreset
+  SpeciesName: Smrek
+  Description: "Ihli\u010Dnan s ku\u017Eelovitou korunou a horizont\xE1lnymi vetvami"
+  BaseSpecies: 1
+  Iterations: 5
+  BranchAngle: 30
+  SegmentLength: 1.2
+  TrunkRadius: 0.45
+  RadiusDecay: 0.78
+  LengthDecay: 0.82
+  AngleVariation: 4
+  DivergenceAngle: 90
+  Gravitropism: 0.18
+  Phototropism: 0

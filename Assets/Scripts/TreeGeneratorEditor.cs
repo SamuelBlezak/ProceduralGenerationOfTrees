@@ -112,7 +112,7 @@ public class TreeGeneratorEditor : Editor
         }
 
         EditorGUILayout.Space(10);
-        _showStats = EditorGUILayout.Foldout(_showStats, "📊 Statistiky Stromu");
+        _showStats = EditorGUILayout.Foldout(_showStats, "Statistiky Stromu");
         if (_showStats)
         {
             EditorGUI.indentLevel++;
@@ -122,7 +122,7 @@ public class TreeGeneratorEditor : Editor
             {
                 Mesh mesh = mf.sharedMesh;
                 string timeStr = $"{generator.LastGenerationTimeMs:F1} ms";
-                if (generator.LastGenerationTimeMs > 500f) timeStr += " ⚠️ pomale";
+                if (generator.LastGenerationTimeMs > 500f) timeStr += "pomale";
 
                 EditorGUILayout.LabelField("Cas generovania", timeStr);
                 EditorGUILayout.LabelField("Vrcholy (Vertices)", mesh.vertexCount.ToString("N0"));

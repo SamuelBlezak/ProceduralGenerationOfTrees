@@ -22,8 +22,6 @@ public class TreeSpeciesPreset : ScriptableObject
     [Range(0.05f, 2f)]
     public float TrunkRadius = 0.3f;
     [Range(0.5f, 0.95f)]
-    public float RadiusDecay = 0.75f;
-    [Range(0.5f, 0.95f)]
     public float LengthDecay = 0.85f;
     [Range(0f, 20f)]
     public float AngleVariation = 5f;
@@ -41,7 +39,6 @@ public class TreeSpeciesPreset : ScriptableObject
         generator.BranchAngle = BranchAngle;
         generator.SegmentLength = SegmentLength;
         generator.TrunkRadius = TrunkRadius;
-        generator.RadiusDecay = RadiusDecay;
         generator.LengthDecay = LengthDecay;
         generator.AngleVariation = AngleVariation;
         generator.DivergenceAngle = DivergenceAngle;
@@ -56,7 +53,6 @@ public class TreeSpeciesPreset : ScriptableObject
         BranchAngle = generator.BranchAngle;
         SegmentLength = generator.SegmentLength;
         TrunkRadius = generator.TrunkRadius;
-        RadiusDecay = generator.RadiusDecay;
         LengthDecay = generator.LengthDecay;
         AngleVariation = generator.AngleVariation;
         DivergenceAngle = generator.DivergenceAngle;
@@ -73,8 +69,8 @@ public class TreeSpeciesPreset : ScriptableObject
         p.Iterations = 4;
         p.BranchAngle = 30f;
         p.SegmentLength = 0.8f;
-        p.TrunkRadius = 0.4f;
-        p.RadiusDecay = 0.72f;
+        // Mohutný kmeň — typický znak duba
+        p.TrunkRadius = 0.55f;
         p.LengthDecay = 0.8f;
         p.AngleVariation = 8f;
         p.DivergenceAngle = 137.5f;
@@ -83,41 +79,25 @@ public class TreeSpeciesPreset : ScriptableObject
         return p;
     }
 
-    public static TreeSpeciesPreset CreateSprucePreset()
-    {
-        var p = CreateInstance<TreeSpeciesPreset>();
-        p.SpeciesName = "Smrek";
-        p.Description = "Ihličnan s kuželovitou korunou";
-        p.BaseSpecies = TreeSpecies.Conifer;
-        p.Iterations = 5;
-        p.BranchAngle = 35f;
-        p.SegmentLength = 0.6f;
-        p.TrunkRadius = 0.25f;
-        p.RadiusDecay = 0.68f;
-        p.LengthDecay = 0.75f;
-        p.AngleVariation = 3f;
-        p.DivergenceAngle = 137.5f;
-        p.Gravitropism = 0.12f;
-        p.Phototropism = 0.02f;
-        return p;
-    }
-
     public static TreeSpeciesPreset CreateWillowPreset()
     {
         var p = CreateInstance<TreeSpeciesPreset>();
         p.SpeciesName = "Vŕba";
-        p.Description = "Strom s prevísajúcimi vetvami";
+        p.Description = "Strom s dlhými prevísajúcimi vetvami";
         p.BaseSpecies = TreeSpecies.Willow;
-        p.Iterations = 4;
-        p.BranchAngle = 20f;
-        p.SegmentLength = 1.2f;
-        p.TrunkRadius = 0.35f;
-        p.RadiusDecay = 0.8f;
-        p.LengthDecay = 0.9f;
-        p.AngleVariation = 6f;
-        p.DivergenceAngle = 137.5f;
-        p.Gravitropism = 0.25f;
-        p.Phototropism = 0.08f;
+        // Vyššie iterations pre vyšší kmeň a dlhšie prevísajúce vetvy
+        p.Iterations = 5;
+        p.BranchAngle = 18f;
+        // Výrazne dlhšie segmenty - vŕba je vysoký strom
+        p.SegmentLength = 1.5f;
+        p.TrunkRadius = 0.42f;
+        // Pomalé skracovanie — vŕba má dlhé vetvy
+        p.LengthDecay = 0.88f;
+        p.AngleVariation = 5f;
+        p.DivergenceAngle = 90f;
+        // Silný gravitropizmus = typické prevísanie
+        p.Gravitropism = 0.35f;
+        p.Phototropism = 0.0f;
         return p;
     }
 }

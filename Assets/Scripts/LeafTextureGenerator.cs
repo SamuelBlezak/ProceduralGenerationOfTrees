@@ -1,20 +1,8 @@
 using UnityEngine;
 
-/// <summary>
-/// Procedurálny generátor textúry listu.
-/// Vytvára jednoduchú textúru listu s alpha cutout pre realistickejší vzhľad.
-/// 
-/// Tvar listu je definovaný eliptickou funkciou s pilovitým okrajom
-/// a žilkovou štruktúrou (veins) pre prirodzený vzhľad.
-/// </summary>
 public static class LeafTextureGenerator
 {
-    /// <summary>
-    /// Vygeneruje procedurálnu textúru listu.
-    /// </summary>
-    /// <param name="baseColor">Základná farba listu</param>
-    /// <param name="resolution">Rozlíšenie textúry</param>
-    /// <param name="seed">Seed pre variáciu</param>
+
     public static Texture2D GenerateLeafTexture(Color baseColor, int resolution = 128, int seed = 42)
     {
         Texture2D tex = new Texture2D(resolution, resolution, TextureFormat.RGBA32, true);
@@ -30,30 +18,31 @@ public static class LeafTextureGenerator
         {
             for (int x = 0; x < resolution; x++)
             {
-                // Normalizované koordináty (0-1)
                 float u = (float)x / resolution;
                 float v = (float)y / resolution;
 
-                // Posun stredu na (0.5, 0.35) — list má stopku dole
                 float cx = u - 0.5f;
-                float cy = v - 0.35f;
 
-                // === Tvar listu: eliptická funkcia s variáciou ===
-                // List je širší v hornej tretine a zúžený dole (pri stopke)
-                float widthAtY = LeafWidth(v);
-                float leafShape = Mathf.Abs(cx) / Mathf.Max(widthAtY, 0.001f);
+                float alpha = 0f;
 
-                // Pilovitý okraj (zuby na obvode)
-                float edgeNoise = Mathf.Sin(v * 25f + offsetX) * 0.03f
-                                + Mathf.Sin(v * 13f + offsetX * 2f) * 0.02f;
-                leafShape += edgeNoise;
+                if (v < 0.08f)
+                {
+                    float petioleHalfWidth = 0.025f;
+                    if (Mathf.Abs(cx) < petioleHalfWidth)
+                        alpha = 1f;
+                }
+                else
+                {
+                    float halfWidth = LeafHalfWidth(v);
+                    float dx = Mathf.Abs(cx) / Mathf.Max(halfWidth, 0.001f);
 
-                // Alpha: vnútri listu = 1, vonku = 0
-                float alpha = leafShape < 1f ? 1f : 0f;
+                    float edgeNoise = Mathf.Sin(v * 25f + offsetX) * 0.04f
+                                    + Mathf.Sin(v * 13f + offsetX * 2f) * 0.025f;
+                    float edgeDist = dx + edgeNoise;
 
-                // Anti-aliasing na okraji
-                if (leafShape > 0.9f && leafShape < 1.1f)
-                    alpha = Mathf.Clamp01(1f - (leafShape - 0.9f) * 5f);
+                    if (edgeDist < 1f) alpha = 1f;
+                    else if (edgeDist < 1.1f) alpha = Mathf.Clamp01(1f - (edgeDist - 1f) * 10f);
+                }
 
                 if (alpha < 0.01f)
                 {
@@ -61,11 +50,8 @@ public static class LeafTextureGenerator
                     continue;
                 }
 
-                // === Farba listu ===
-                // Stredná žilka (tmavšia)
                 float midVein = 1f - Mathf.Exp(-Mathf.Abs(cx) * 40f) * 0.25f;
 
-                // Bočné žilky (šikmé čiary od stredu)
                 float sideVeins = 0f;
                 for (int i = 1; i <= 5; i++)
                 {
@@ -74,10 +60,12 @@ public static class LeafTextureGenerator
                     sideVeins += Mathf.Exp(-veinDist * 60f) * 0.15f;
                 }
 
-                // Gradient: stred svetlejší, okraj tmavší
-                float edgeDarkening = 1f - leafShape * 0.3f;
+                float halfWidthAtV = LeafHalfWidth(v);
+                float normalizedDist = halfWidthAtV > 0.001f
+                    ? Mathf.Clamp01(Mathf.Abs(cx) / halfWidthAtV)
+                    : 0f;
+                float edgeDarkening = 1f - normalizedDist * 0.3f;
 
-                // Variácia v odtieni
                 float noise = Mathf.PerlinNoise(u * 8f + offsetX, v * 8f) * 0.1f;
 
                 float brightness = edgeDarkening * midVein - sideVeins + noise;
@@ -85,7 +73,7 @@ public static class LeafTextureGenerator
 
                 Color pixelColor = new Color(
                     baseColor.r * brightness,
-                    baseColor.g * brightness * 1.05f, // Zelená mierne zvýraznená
+                    baseColor.g * brightness * 1.05f,
                     baseColor.b * brightness * 0.9f,
                     alpha
                 );
@@ -99,32 +87,34 @@ public static class LeafTextureGenerator
         return tex;
     }
 
-    /// <summary>
-    /// Definuje šírku listu v závislosti od vertikálnej pozície.
-    /// Vracia polovičnú šírku (0-0.5) pre danú pozíciu v (0-1).
-    /// </summary>
-    private static float LeafWidth(float v)
+    private static float LeafHalfWidth(float v)
     {
-        // Stopka (v < 0.1): veľmi úzky
-        if (v < 0.1f) return v * 1.5f;
+        const float bladeStart = 0.08f;
+        const float bladePeak = 0.45f;
+        const float maxHalfWidth = 0.32f;
 
-        // Hlavná plocha (0.1 - 0.75): eliptický tvar, najširší okolo v=0.45
-        if (v < 0.75f)
+        if (v < bladeStart || v > 1f) return 0f;
+
+        float t = (v - bladeStart) / (1f - bladeStart);
+
+        float peakT = (bladePeak - bladeStart) / (1f - bladeStart);
+
+        float width;
+        if (t < peakT)
         {
-            float t = (v - 0.1f) / 0.65f; // Normalizácia do 0-1
-            return 0.4f * Mathf.Sin(t * Mathf.PI);
+            float localT = t / peakT;
+            width = maxHalfWidth * Mathf.Sin(localT * Mathf.PI * 0.5f);
+        }
+        else
+        {
+            float localT = (t - peakT) / (1f - peakT);
+            width = maxHalfWidth * Mathf.Cos(localT * Mathf.PI * 0.5f);
+            width *= (1f - localT * localT * 0.3f);
         }
 
-        // Špička (0.75 - 1.0): zúženie na bod
-        float tip = (v - 0.75f) / 0.25f;
-        float widthAtStart = 0.4f * Mathf.Sin(0.75f / 0.65f * Mathf.PI);
-        return widthAtStart * (1f - tip * tip);
+        return width;
     }
 
-    /// <summary>
-    /// Vytvorí materiál pre listy s alpha cutout.
-    /// Automaticky detekuje URP vs Built-in pipeline.
-    /// </summary>
     public static Material CreateLeafMaterial(Color baseColor, int seed = 42, int resolution = 128)
     {
         Texture2D leafTex = GenerateLeafTexture(baseColor, resolution, seed);
@@ -141,15 +131,13 @@ public static class LeafTextureGenerator
             mat.SetColor("_BaseColor", Color.white);
             mat.SetFloat("_Smoothness", 0.2f);
 
-            // Alpha clipping pre cutout transparentnosť
             mat.SetFloat("_AlphaClip", 1f);
             mat.SetFloat("_Cutoff", 0.5f);
             mat.EnableKeyword("_ALPHATEST_ON");
-            mat.SetFloat("_Surface", 0f); // Opaque s alpha test
-            mat.renderQueue = 2450; // AlphaTest queue
+            mat.SetFloat("_Surface", 0f);
+            mat.renderQueue = 2450;
 
-            // Obojstranné renderovanie
-            mat.SetFloat("_Cull", 0f); // Off
+            mat.SetFloat("_Cull", 0f);
         }
         else
         {
@@ -157,13 +145,11 @@ public static class LeafTextureGenerator
             mat.color = Color.white;
             mat.SetFloat("_Glossiness", 0.2f);
 
-            // Alpha cutout mode pre Standard shader
-            mat.SetFloat("_Mode", 1f); // Cutout
+            mat.SetFloat("_Mode", 1f);
             mat.SetFloat("_Cutoff", 0.5f);
             mat.EnableKeyword("_ALPHATEST_ON");
             mat.renderQueue = 2450;
 
-            // Obojstranné renderovanie
             mat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
         }
 

@@ -1,15 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-/// <summary>
-/// Orbit kamera pre nový Input System.
-/// 
-/// Ovládanie:
-///   - Stredné tlačidlo + ťahanie: otáčanie okolo stromu
-///   - Scroll: priblíženie / oddialenie
-///   - Pravé tlačidlo + ťahanie: posun kamery (pan)
-///   - F: vycentrovanie na strom
-/// </summary>
 public class OrbitCamera : MonoBehaviour
 {
     [Tooltip("Cieľ okolo ktorého kamera rotuje")]
@@ -54,7 +45,6 @@ public class OrbitCamera : MonoBehaviour
 
         Vector2 delta = mouse.delta.ReadValue();
 
-        // Stredné tlačidlo — otáčanie
         if (mouse.middleButton.isPressed)
         {
             _yaw += delta.x * RotationSpeed;
@@ -62,14 +52,12 @@ public class OrbitCamera : MonoBehaviour
             _pitch = Mathf.Clamp(_pitch, -89f, 89f);
         }
 
-        // Pravé tlačidlo — pan
         if (mouse.rightButton.isPressed)
         {
             _panOffset += transform.right * (-delta.x * PanSpeed * Distance);
             _panOffset += transform.up * (-delta.y * PanSpeed * Distance);
         }
 
-        // Scroll — zoom (len bez Shift)
         bool shiftHeld = kb != null && kb.leftShiftKey.isPressed;
         if (!shiftHeld)
         {
@@ -81,14 +69,12 @@ public class OrbitCamera : MonoBehaviour
             }
         }
 
-        // F — vycentrovanie
         if (kb != null && kb.fKey.wasPressedThisFrame)
         {
             _panOffset = Vector3.zero;
             Distance = 8f;
         }
 
-        // Pozícia kamery
         Quaternion rotation = Quaternion.Euler(_pitch, _yaw, 0);
         Vector3 offset = rotation * new Vector3(0, 0, -Distance);
         Vector3 targetPos = Target.position + _panOffset + Vector3.up * 2f;
